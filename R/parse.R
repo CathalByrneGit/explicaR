@@ -209,18 +209,47 @@ explicar_parse <- function(project_dir = ".", pattern = "\\.R$", recursive = FAL
 }
 
 
+# ── Verb discovery ────────────────────────────────────────────────────────────
+
+#' Discover data-transformation verbs exported from dplyr / tidyr
+#'
+#' A function qualifies when its first formal parameter is one of the
+#' conventional `.data` / `x` / `data` / `.tbl` names used by the tidyverse.
+#' The result is a named character vector `c(verb = "pkg", ...)`, cached for
+#' the session so the scan runs at most once.
+#' @noRd
+.verb_discovery_cache <- new.env(parent = emptyenv())
+
+.discover_verbs <- function(pkgs = c("dplyr", "tidyr")) {
+  cache_key <- paste(sort(pkgs), collapse = "_")
+  if (exists(cache_key, envir = .verb_discovery_cache, inherits = FALSE))
+    return(get(cache_key, envir = .verb_discovery_cache))
+
+  result <- c()
+  first_arg_names <- c(".data", "x", "data", ".tbl")
+
+  for (pkg in pkgs) {
+    if (!requireNamespace(pkg, quietly = TRUE)) next
+    fns <- getNamespaceExports(pkg)
+    is_verb <- vapply(fns, function(f) {
+      tryCatch({
+        p <- names(formals(getExportedValue(pkg, f)))
+        length(p) > 0 && p[1] %in% first_arg_names
+      }, error = function(e) FALSE)
+    }, logical(1))
+    keep   <- fns[is_verb]
+    result <- c(result, setNames(rep(pkg, length(keep)), keep))
+  }
+
+  assign(cache_key, result, envir = .verb_discovery_cache)
+  result
+}
+
+
 #' Extract dplyr/tidyr verb calls from a single script
 #' @noRd
 .extract_verbs <- function(script) {
-  # Verbs we care about, mapped to their package
-  tidyverse_verbs <- c(
-    filter = "dplyr", mutate = "dplyr", select = "dplyr",
-    group_by = "dplyr", summarise = "dplyr", summarize = "dplyr",
-    arrange = "dplyr", left_join = "dplyr", right_join = "dplyr",
-    inner_join = "dplyr", full_join = "dplyr", rename = "dplyr",
-    pivot_longer = "tidyr", pivot_wider = "tidyr",
-    separate = "tidyr", unite = "tidyr", drop_na = "tidyr"
-  )
+  tidyverse_verbs <- .discover_verbs()
 
   tryCatch({
     pd <- getParseData(parse(file = script, keep.source = TRUE))
