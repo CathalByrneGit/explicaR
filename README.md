@@ -138,6 +138,96 @@ ollama_available()
 ollama_models()
 ```
 
+## Searchable code index
+
+explicaR can build a local semantic index of your project so you can ask questions like *"how does the animation pipeline work?"* and get back relevant code and docs — all on-device, nothing sent to external services.
+
+### Build the index
+
+```r
+# Index all R source files (functions, edges, call graph)
+explicar_index_build()
+
+# Search by keyword or natural language
+explicar_index_retrieve("how does verb animation work")
+explicar_index_retrieve("filter transformation")
+```
+
+### Generate documentation
+
+Two complementary approaches, both fully private:
+
+#### 1. Extract from source (fast, no LLM)
+
+Pulls structured documentation straight from your existing roxygen2 comments,
+`man/*.Rd` files, `README.md`, and vignettes.
+
+```r
+# Extract from all local sources
+explicar_index_build_docs()
+
+# Choose specific sources
+explicar_index_build_docs(include = c("source", "readme"))
+
+# Also embed chunks for semantic (vector) search
+explicar_index_build_docs(embed = TRUE, embed_model = "nomic-embed-text")
+```
+
+Source priority:
+1. `man/*.Rd` — run `devtools::document()` to generate these
+2. `R/*.R` roxygen2 `#'` blocks — works directly on raw source, no generation step needed
+3. `README.md` / `README.Rmd`
+4. `vignettes/*.Rmd`, `.qmd`, `.md`
+
+Every chunk stored includes a `file://` URL pointing back to the exact source location.
+
+#### 2. Generate wiki pages with a local LLM (richer, requires Ollama)
+
+Sends each source file to a locally-running Ollama model and asks it to write
+a narrative wiki page — same idea as DeepWiki, but running entirely on your
+machine with your private code.
+
+```r
+# Generate one wiki page per R source file + a cross-file architecture overview
+explicar_index_generate_wiki(model = "llama3.2")
+
+# Architecture overview only (faster)
+explicar_index_generate_wiki(model = "mistral", include = "architecture")
+
+# Regenerate with a different model
+explicar_index_generate_wiki(model = "gemma3", force = TRUE)
+```
+
+Each generated page covers:
+- **Overview** — what the module does and why it exists
+- **Key Functions** — purpose, parameters, return value in plain English
+- **How It Works** — internal flow / algorithm explained in prose
+- **Usage Example** — short R snippet where relevant
+
+The architecture overview synthesises all files together to explain how the
+components connect.
+
+### Retrieve across everything
+
+Both extraction and generation store into the same `docs` table, so a single
+retrieve call searches all of it:
+
+```r
+explicar_index_retrieve("how does the animation pipeline work")
+explicar_index_retrieve("what does explicar_parse return")
+```
+
+### Privacy model
+
+| Feature | Network calls |
+|---------|--------------|
+| `explicar_index_build()` | None — reads local files |
+| `explicar_index_build_docs()` | None — reads local files |
+| `explicar_index_generate_wiki()` | Local Ollama only |
+| Embeddings (`embed = TRUE`) | Local Ollama only |
+
+No source code or documentation ever leaves your machine.
+
 ## Architecture
 
 ```
@@ -150,7 +240,9 @@ explicaR
 ├── Trace Layer       trace.R    instrumented source() → snapshots
 ├── targets Layer     targets.R  cache reader (soft dependency)
 ├── Report Layer      report.R   self-contained HTML renderer
-└── Enrich Layer      enrich.R   Ollama LLM enrichment (optional)
+├── Enrich Layer      enrich.R   Ollama LLM enrichment (optional)
+└── Index Layer       index.R          DuckDB code index + vector search
+                      index-docs.R     local doc extraction + LLM wiki generation
 ```
 
 ### Node types in the graph
@@ -189,7 +281,8 @@ explicaR
 | `datamations` | Verb-level animation | Optional (GitHub) |
 | `targets` | Pipeline cache reading | Optional |
 | `roxygen2` | Documentation extraction | Optional |
-| `httr2` | LLM enrichment via Ollama | Optional |
+| `duckdb` / `DBI` | Code index and doc store | Optional |
+| `httr2` | Ollama API calls (enrichment, embeddings, wiki) | Optional |
 | `ggraph` | Static graph export | Optional |
 
 ## Design principles
@@ -200,6 +293,7 @@ explicaR
 4. **Soft dependencies** — targets, datamations, and LLM enrichment are all optional
 5. **Shape as signal** — `nrow × ncol` on every variable node tells the pipeline story without animation
 6. **Prefer human-written context** — roxygen docs and inline comments take priority over LLM inference
+7. **Private by default** — the index, doc extraction, and wiki generation all run locally; no source code is sent to external services
 
 ## License
 
