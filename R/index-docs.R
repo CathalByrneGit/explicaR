@@ -489,3 +489,291 @@ explicar_index_build_docs <- function(project_dir = ".",
   if (!length(hit)) return(NULL)
   trimws(gsub('^title:\\s*["\']?|["\']?\\s*$', "", hit[1L]))
 }
+
+# ===========================================================================
+# LLM-generated wiki  (explicar_index_generate_wiki)
+# ===========================================================================
+
+#' Generate a wiki from your package using a local LLM
+#'
+#' Sends each R source file (and optionally a cross-file architecture prompt)
+#' to a locally-running [Ollama](https://ollama.com) model and asks it to
+#' write a narrative wiki page in markdown.  The pages are stored in the
+#' `.explicar/index.duckdb` `docs` table alongside any content added by
+#' [explicar_index_build_docs()], so [explicar_index_retrieve()] can search
+#' all of them together.
+#'
+#' Nothing leaves your machine.  All inference is done by the Ollama server
+#' you already run locally (same server used for embeddings).
+#'
+#' @param project_dir Path to the R project.  Default `"."`.
+#' @param model Ollama model name to use for generation, e.g.
+#'   `"llama3.2"`, `"mistral"`, `"gemma3"`, `"phi4"`.
+#' @param ollama_url Ollama API base URL.  Default `"http://localhost:11434"`.
+#' @param include Character vector.  `"files"` generates one wiki page per
+#'   `R/*.R` source file.  `"architecture"` generates a single cross-file
+#'   architecture overview.  Default is both.
+#' @param max_file_chars Maximum characters of source code sent per file
+#'   (prevents very large files from overflowing the model's context).
+#'   Default 6000.
+#' @param force Overwrite existing wiki pages for this model/project.
+#' @param quiet Suppress progress messages.
+#'
+#' @return Invisibly, the number of wiki pages stored.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Generate wiki with any locally-available Ollama model
+#' explicar_index_generate_wiki(model = "llama3.2")
+#'
+#' # Only the architecture overview page
+#' explicar_index_generate_wiki(model = "mistral", include = "architecture")
+#'
+#' # Then retrieve across code + wiki together
+#' explicar_index_retrieve("how does the animation pipeline work")
+#' }
+explicar_index_generate_wiki <- function(project_dir    = ".",
+                                         model          = "llama3.2",
+                                         ollama_url     = "http://localhost:11434",
+                                         include        = c("files", "architecture"),
+                                         max_file_chars = 6000L,
+                                         force          = FALSE,
+                                         quiet          = FALSE) {
+  .require_duckdb()
+  if (!requireNamespace("httr2", quietly = TRUE))
+    stop("Package 'httr2' is required for LLM generation.\n",
+         "Install with: install.packages('httr2')", call. = FALSE)
+
+  project_dir <- normalizePath(project_dir, mustWork = TRUE)
+  idx_path    <- .index_path(project_dir)
+
+  if (!file.exists(idx_path)) {
+    if (!quiet) message("No index found — building code index first...")
+    explicar_index_build(project_dir, quiet = quiet)
+  }
+
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = idx_path)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+
+  .ensure_schema(con)
+
+  pkg_name  <- .read_pkg_name(project_dir)
+  source_id <- paste0("wiki:", pkg_name, ":", model)
+
+  if (!force) {
+    n_existing <- DBI::dbGetQuery(
+      con,
+      sprintf("SELECT COUNT(*) AS n FROM docs WHERE source = '%s'",
+              gsub("'", "''", source_id))
+    )$n
+    if (n_existing > 0L) {
+      if (!quiet) {
+        message("Wiki already generated (", n_existing, " pages). ",
+                "Use force = TRUE to regenerate.")
+      }
+      return(invisible(n_existing))
+    }
+  }
+
+  # Quick connectivity check
+  if (!.ollama_ping(ollama_url)) {
+    stop("Cannot reach Ollama at ", ollama_url,
+         ".\nMake sure Ollama is running: https://ollama.com", call. = FALSE)
+  }
+  if (!quiet) message("Using model '", model, "' via ", ollama_url)
+
+  r_files     <- list.files(file.path(project_dir, "R"), pattern = "\\.R$",
+                             full.names = TRUE)
+  all_rows    <- list()
+  fetched_at  <- as.numeric(Sys.time())
+  pages_done  <- 0L
+
+  # ------------------------------------------------------------------
+  # 1. One wiki page per source file
+  # ------------------------------------------------------------------
+  if ("files" %in% include) {
+    for (r_file in r_files) {
+      rel_name <- basename(r_file)
+      if (!quiet) message("  Generating wiki page for ", rel_name, " ...")
+
+      code <- .read_truncated(r_file, max_file_chars)
+      prompt <- .wiki_file_prompt(rel_name, pkg_name, code)
+      wiki_md <- .ollama_generate(prompt, model, ollama_url)
+
+      if (is.null(wiki_md)) {
+        if (!quiet) message("    [skipped — model returned empty response]")
+        next
+      }
+
+      # Use the first # heading as page title; fall back to file name
+      title  <- .first_heading(wiki_md) %||% tools::file_path_sans_ext(rel_name)
+      chunks <- .chunk_markdown(wiki_md, title)
+      url    <- paste0("file://", r_file)
+
+      for (i in seq_along(chunks)) {
+        all_rows[[length(all_rows) + 1L]] <- list(
+          doc_id     = paste0(source_id, "/", rel_name, "/", i),
+          source     = source_id,
+          url        = url,
+          page_title = title,
+          chunk_idx  = i,
+          context    = chunks[[i]]$context,
+          content    = chunks[[i]]$content,
+          fetched_at = fetched_at
+        )
+      }
+      pages_done <- pages_done + 1L
+    }
+  }
+
+  # ------------------------------------------------------------------
+  # 2. Cross-file architecture overview
+  # ------------------------------------------------------------------
+  if ("architecture" %in% include && length(r_files)) {
+    if (!quiet) message("  Generating architecture overview ...")
+
+    # Summarise the package: file names + exported function names + first
+    # roxygen description line from each file
+    summaries <- vapply(r_files, function(f) {
+      lines <- tryCatch(readLines(f, warn = FALSE), error = function(e) character(0L))
+      fns   <- grep("^[a-zA-Z._][a-zA-Z0-9._]*\\s*(<-|=)\\s*function", lines,
+                    value = TRUE, perl = FALSE)
+      fn_names <- sub("\\s*(<-|=).*", "", trimws(fns))
+      paste0("## ", basename(f), "\n",
+             "Functions: ", paste(fn_names, collapse = ", "))
+    }, character(1L), USE.NAMES = FALSE)
+
+    arch_prompt <- .wiki_arch_prompt(pkg_name, summaries)
+    arch_md     <- .ollama_generate(arch_prompt, model, ollama_url)
+
+    if (!is.null(arch_md)) {
+      title  <- .first_heading(arch_md) %||% paste0(pkg_name, " — Architecture")
+      chunks <- .chunk_markdown(arch_md, title)
+
+      for (i in seq_along(chunks)) {
+        all_rows[[length(all_rows) + 1L]] <- list(
+          doc_id     = paste0(source_id, "/architecture/", i),
+          source     = source_id,
+          url        = paste0("file://", project_dir),
+          page_title = title,
+          chunk_idx  = i,
+          context    = chunks[[i]]$context,
+          content    = chunks[[i]]$content,
+          fetched_at = fetched_at
+        )
+      }
+      pages_done <- pages_done + 1L
+    }
+  }
+
+  if (length(all_rows) == 0L) {
+    if (!quiet) message("No wiki pages generated.")
+    return(invisible(0L))
+  }
+
+  df <- do.call(rbind, lapply(all_rows, as.data.frame, stringsAsFactors = FALSE))
+
+  DBI::dbExecute(
+    con,
+    sprintf("DELETE FROM docs WHERE source = '%s'", gsub("'", "''", source_id))
+  )
+  DBI::dbWriteTable(con, "docs", df, append = TRUE)
+
+  if (!quiet) {
+    message("Stored ", nrow(df), " chunk(s) across ",
+            pages_done, " generated wiki page(s).")
+  }
+
+  invisible(pages_done)
+}
+
+# ---------------------------------------------------------------------------
+# Ollama generation helpers
+# ---------------------------------------------------------------------------
+
+# POST to /api/generate (non-streaming).  Returns the response text or NULL.
+.ollama_generate <- function(prompt, model, ollama_url, timeout = 120L) {
+  tryCatch({
+    resp <- httr2::request(paste0(ollama_url, "/api/generate")) |>
+      httr2::req_body_json(list(model  = model,
+                                prompt = prompt,
+                                stream = FALSE)) |>
+      httr2::req_timeout(timeout) |>
+      httr2::req_perform()
+    body <- httr2::resp_body_json(resp)
+    trimws(as.character(body$response))
+  }, error = function(e) NULL)
+}
+
+# Quick reachability check — returns TRUE if Ollama responds.
+.ollama_ping <- function(ollama_url) {
+  tryCatch({
+    resp <- httr2::request(paste0(ollama_url, "/api/tags")) |>
+      httr2::req_timeout(5L) |>
+      httr2::req_perform()
+    httr2::resp_status(resp) < 400L
+  }, error = function(e) FALSE)
+}
+
+# Read a file and truncate to max_chars to avoid overflow.
+.read_truncated <- function(file_path, max_chars) {
+  raw <- paste(tryCatch(readLines(file_path, warn = FALSE),
+                        error = function(e) character(0L)),
+               collapse = "\n")
+  if (nchar(raw) > max_chars) {
+    raw <- paste0(substr(raw, 1L, max_chars),
+                  "\n\n... [source truncated for brevity] ...")
+  }
+  raw
+}
+
+# Return the text of the first # or ## heading in a markdown string.
+.first_heading <- function(md) {
+  m <- regmatches(md, regexpr("(?m)^#{1,2}\\s+(.+)$", md, perl = TRUE))
+  if (!length(m)) return(NULL)
+  trimws(sub("^#{1,2}\\s+", "", m[[1L]]))
+}
+
+# ---------------------------------------------------------------------------
+# Prompt templates
+# ---------------------------------------------------------------------------
+
+.wiki_file_prompt <- function(filename, pkg_name, code) {
+  paste0(
+    "You are a technical documentation writer for the R package '", pkg_name, "'.\n",
+    "Write a clear, well-structured wiki page in markdown that explains the\n",
+    "file '", filename, "' to a developer who is new to this codebase.\n\n",
+    "Your page must include:\n",
+    "1. A concise # heading that names the module (not the filename).\n",
+    "2. An 'Overview' section: what this file does and why it exists.\n",
+    "3. A 'Key Functions' section: for each exported or important function,\n",
+    "   one short paragraph explaining its purpose, key parameters, and\n",
+    "   what it returns.\n",
+    "4. A 'How It Works' section: explain the internal flow or algorithm\n",
+    "   at a high level (no need to repeat line-by-line code).\n",
+    "5. Where relevant, a 'Usage Example' section with a short R snippet.\n\n",
+    "Write in prose (not bullet lists). Use markdown ## for each section.\n",
+    "Do not include the raw source code in your output.\n\n",
+    "Source code of '", filename, "':\n\n```r\n", code, "\n```"
+  )
+}
+
+.wiki_arch_prompt <- function(pkg_name, file_summaries) {
+  files_block <- paste(file_summaries, collapse = "\n\n")
+  paste0(
+    "You are a software architect documenting the R package '", pkg_name, "'.\n",
+    "Write a high-level architecture overview wiki page in markdown.\n\n",
+    "Your page must include:\n",
+    "1. A # heading: '", pkg_name, " — Architecture'.\n",
+    "2. An 'Overview' section: what the package does and its main goals.\n",
+    "3. A 'Module Map' section: describe each source file and its role,\n",
+    "   and how the files depend on or call each other.\n",
+    "4. A 'Data Flow' section: trace how data moves through the package\n",
+    "   from user input to final output.\n",
+    "5. A 'Key Design Decisions' section: note any patterns or abstractions\n",
+    "   that a new contributor should understand.\n\n",
+    "Write in clear prose with markdown ## headings for each section.\n\n",
+    "Package structure:\n\n", files_block
+  )
+}

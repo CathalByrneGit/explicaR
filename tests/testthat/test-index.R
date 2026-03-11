@@ -300,3 +300,51 @@ test_that("explicar_index_build_docs indexes roxygen from R source", {
   expect_true(nrow(docs) >= 1L)
   expect_true(grepl("my_mean", paste(docs$content, collapse = " ")))
 })
+test_that("explicar_index_generate_wiki stops gracefully when Ollama is down", {
+  proj <- make_project()
+  on.exit(unlink(proj, recursive = TRUE))
+
+  writeLines(c("Package: testpkg", "Version: 0.1.0"),
+             file.path(proj, "DESCRIPTION"))
+
+  explicar_index_build(proj, quiet = TRUE)
+
+  # Ollama is not running in tests, so we expect a clear error message
+  expect_error(
+    explicar_index_generate_wiki(proj,
+                                 model      = "llama3.2",
+                                 ollama_url = "http://127.0.0.1:19999",
+                                 quiet      = TRUE),
+    regexp = "Cannot reach Ollama"
+  )
+})
+
+test_that("explicar_index_generate_wiki is idempotent without force", {
+  proj <- make_project()
+  on.exit(unlink(proj, recursive = TRUE))
+
+  writeLines(c("Package: testpkg", "Version: 0.1.0"),
+             file.path(proj, "DESCRIPTION"))
+
+  path <- explicar_index_build(proj, quiet = TRUE)
+
+  # Pre-seed the wiki table
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+
+  DBI::dbExecute(con, "
+    INSERT INTO docs VALUES (
+      'wiki:testpkg:llama3.2/R/foo.R/1', 'wiki:testpkg:llama3.2',
+      'file:///R/foo.R', 'Foo Module', 1,
+      'Foo Module', 'content about foo', 0.0
+    )
+  ")
+  DBI::dbDisconnect(con, shutdown = TRUE)
+
+  msg <- capture_messages(
+    explicar_index_generate_wiki(proj, model = "llama3.2",
+                                 ollama_url = "http://127.0.0.1:19999",
+                                 quiet = FALSE)
+  )
+  expect_true(any(grepl("already generated", msg)))
+})
