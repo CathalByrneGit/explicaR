@@ -199,31 +199,20 @@ test_that(".chunk_markdown handles empty input", {
   expect_equal(length(chunks), 0L)
 })
 
-test_that(".pages_to_chunks produces correct columns", {
-  pages <- list(
-    list(slug = "overview", title = "Overview",
-         content = "# Overview\n\nSome content here.\n\n## Sub\n\nMore.")
-  )
-  df <- explicaR:::.pages_to_chunks(pages, "deepwiki:test/repo", "test/repo")
-  expect_s3_class(df, "data.frame")
-  expect_true(all(c("doc_id", "source", "url", "page_title",
-                    "chunk_idx", "context", "content", "fetched_at") %in% names(df)))
-  expect_true(nrow(df) >= 1L)
-  expect_true(all(df$source == "deepwiki:test/repo"))
-  expect_true(grepl("deepwiki.com/test/repo/overview", df$url[[1L]]))
+test_that(".chunk_markdown splits on ## headings", {
+  md <- "# Title\n\nIntro text.\n\n## Section A\n\nContent A.\n\n## Section B\n\nContent B."
+  chunks <- explicaR:::.chunk_markdown(md, "Title", max_chars = 2000L)
+  expect_gte(length(chunks), 2L)
+  contexts <- vapply(chunks, `[[`, "", "context")
+  expect_true(any(grepl("Section A", contexts)))
+  expect_true(any(grepl("Section B", contexts)))
 })
 
-test_that(".detect_github_repo reads URL from DESCRIPTION", {
-  proj <- tempfile("repo_detect_")
-  dir.create(proj)
-  on.exit(unlink(proj, recursive = TRUE))
-
-  writeLines(
-    c("Package: foo", "URL: https://github.com/myorg/myrepo"),
-    file.path(proj, "DESCRIPTION")
-  )
-  repo <- explicaR:::.detect_github_repo(proj)
-  expect_equal(repo, "myorg/myrepo")
+test_that(".chunk_markdown splits long sections at paragraph boundaries", {
+  long_para <- paste(rep("word", 400), collapse = " ")
+  md <- paste0("## Big Section\n\n", long_para, "\n\n", long_para)
+  chunks <- explicaR:::.chunk_markdown(md, "Page", max_chars = 800L)
+  expect_gte(length(chunks), 2L)
 })
 
 test_that("explicar_index_build_docs is idempotent without force", {

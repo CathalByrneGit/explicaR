@@ -395,28 +395,5 @@ explicar_report <- function(parse_result,
 #' Enrich node labels using LLM (internal, called when enrich=TRUE)
 #' @noRd
 .enrich_parse_result <- function(parse_result, model) {
-  if (!requireNamespace("httr2", quietly = TRUE)) {
-    message("httr2 not installed. Skipping LLM enrichment.")
-    return(parse_result)
-  }
-
-  fn_nodes <- parse_result$nodes[parse_result$nodes$type == "function" &
-                                    parse_result$nodes$label == parse_result$nodes$name, ]
-
-  if (nrow(fn_nodes) == 0) return(parse_result)
-
-  message("explicaR: enriching ", nrow(fn_nodes), " undocumented function nodes via LLM")
-
-  for (i in seq_len(nrow(fn_nodes))) {
-    nm <- fn_nodes$name[i]
-    enriched <- tryCatch(
-      enrich_node_label(nm, model = model),
-      error = function(e) NULL
-    )
-    if (!is.null(enriched) && nchar(enriched) > 0) {
-      parse_result$nodes$label[parse_result$nodes$name == nm] <- enriched
-    }
-  }
-
-  parse_result
+  enrich_parse_result(parse_result, model = model, quiet = FALSE)
 }

@@ -516,3 +516,69 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
   }
 }
 
+# ---------------------------------------------------------------------------
+# Markdown chunker (shared by index-docs.R and future callers)
+# ---------------------------------------------------------------------------
+
+# Split markdown text into retrievable chunks, splitting at ## headings and
+# then further at paragraph boundaries if a section exceeds max_chars.
+# Returns a list of list(context, content).  An empty or whitespace-only
+# text returns an empty list.
+.chunk_markdown <- function(text, page_title, max_chars = 1200L) {
+  text <- trimws(text)
+  if (!nchar(text)) return(list())
+
+  # Split at every ## (or deeper) heading, keeping the heading with its section
+  parts <- strsplit(text, "(?m)(?=^#{2,}\\s)", perl = TRUE)[[1L]]
+  parts <- Filter(function(p) nchar(trimws(p)) > 0L, parts)
+
+  # If there are no sub-headings the whole text is a single chunk
+  if (!length(parts)) {
+    return(list(list(context = page_title, content = text)))
+  }
+
+  chunks <- list()
+
+  for (part in parts) {
+    part <- trimws(part)
+    if (!nchar(part)) next
+
+    # Derive a context label from the leading heading (if present)
+    hm      <- regmatches(part, regexpr("^#{1,6}\\s+[^\n]+", part))
+    heading <- if (length(hm)) trimws(sub("^#{1,6}\\s+", "", hm)) else page_title
+    context <- if (identical(heading, page_title)) page_title
+               else paste0(page_title, " \u203a ", heading)   # › separator
+
+    if (nchar(part) <= max_chars) {
+      chunks[[length(chunks) + 1L]] <- list(context = context, content = part)
+      next
+    }
+
+    # Section too large — split further at paragraph boundaries
+    paras   <- strsplit(part, "\n{2,}")[[1L]]
+    current <- ""
+
+    for (para in paras) {
+      candidate <- if (nchar(current)) paste0(current, "\n\n", para) else para
+      if (nchar(candidate) <= max_chars) {
+        current <- candidate
+      } else {
+        if (nchar(trimws(current))) {
+          chunks[[length(chunks) + 1L]] <- list(context = context,
+                                                content = trimws(current))
+        }
+        current <- para
+      }
+    }
+    if (nchar(trimws(current))) {
+      chunks[[length(chunks) + 1L]] <- list(context = context,
+                                            content = trimws(current))
+    }
+  }
+
+  if (!length(chunks)) {
+    return(list(list(context = page_title, content = text)))
+  }
+  chunks
+}
+

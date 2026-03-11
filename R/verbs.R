@@ -79,6 +79,14 @@ make_verb_descriptor <- function(fn_name, pkg, data_before, args_text,
 
 # ── Special-case constructors (structurally different verbs) ──────────────────
 
+#' Build animation descriptor for filter()
+#' @noRd
+verb_filter <- function(data_before, args_text, output_var = NULL,
+                        data_after = NULL) {
+  make_verb_descriptor("filter", "dplyr", data_before, args_text,
+                       output_var, data_after)
+}
+
 #' Build animation descriptor for *_join()
 #' @noRd
 verb_left_join <- function(data_before, data_y, by_cols, output_var = NULL,
@@ -188,8 +196,6 @@ verb_descriptor <- function(verb_record, snapshots = list()) {
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
-
-`%||%` <- function(x, y) if (!is.null(x)) x else y
 
 #' Try applying a verb to illustrative data
 #' @param fn_qualified Fully qualified function name, e.g. `"dplyr::filter"`.
