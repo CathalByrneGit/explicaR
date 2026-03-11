@@ -253,6 +253,26 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
     )
   ")
 
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS docs (
+      doc_id     VARCHAR PRIMARY KEY,
+      source     VARCHAR,
+      url        VARCHAR,
+      page_title VARCHAR,
+      chunk_idx  INTEGER,
+      context    VARCHAR,
+      content    TEXT,
+      fetched_at DOUBLE
+    )
+  ")
+
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS doc_embeddings (
+      doc_id    VARCHAR PRIMARY KEY,
+      embedding FLOAT[]
+    )
+  ")
+
   invisible(con)
 }
 
@@ -494,4 +514,412 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
       call. = FALSE
     )
   }
+}
+
+# ===========================================================================
+# Documentation fetching — DeepWiki MCP integration
+# ===========================================================================
+
+#' Fetch and index documentation from DeepWiki
+#'
+#' Calls the [DeepWiki MCP server](https://mcp.deepwiki.com) to retrieve
+#' auto-generated wiki pages for a GitHub repository, chunks them by section,
+#' and stores the chunks in the `.explicar/index.duckdb` `docs` table alongside
+#' the code graph.  Chunks can be embedded for semantic retrieval via
+#' [explicar_index_retrieve()].
+#'
+#' The DeepWiki MCP server is free and requires no API key for public
+#' repositories.  It exposes a `read_wiki_contents` tool that returns all wiki
+#' pages as structured markdown with links back to the source repository.
+#'
+#' @param repo        GitHub repository in `"owner/repo"` format.  If `NULL`
+#'   the repository is auto-detected from the git remote or the `URL:` field
+#'   in `DESCRIPTION`.
+#' @param project_dir Path to the R project directory.  Default `"."`.
+#' @param embed       Embed each chunk via Ollama for vector retrieval.
+#'   Default `FALSE`.
+#' @param embed_model Ollama embedding model.  Default `"nomic-embed-text"`.
+#' @param ollama_url  Ollama API base URL.
+#' @param force       Re-fetch even if docs for this repo are already stored.
+#' @param quiet       Suppress progress messages.
+#'
+#' @return Invisibly, the number of chunks stored.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Auto-detect repo from git remote, fetch DeepWiki docs
+#' explicar_index_fetch_docs()
+#'
+#' # Specify repo explicitly and embed for semantic search
+#' explicar_index_fetch_docs("CathalByrneGit/explicaR", embed = TRUE)
+#'
+#' # After fetching, retrieve semantically
+#' explicar_index_retrieve("how does verb animation work")
+#' }
+explicar_index_fetch_docs <- function(repo        = NULL,
+                                      project_dir = ".",
+                                      embed       = FALSE,
+                                      embed_model = "nomic-embed-text",
+                                      ollama_url  = "http://localhost:11434",
+                                      force       = FALSE,
+                                      quiet       = FALSE) {
+  .require_duckdb()
+  if (!requireNamespace("httr2", quietly = TRUE)) {
+    stop("Package 'httr2' is required. Install with: install.packages('httr2')",
+         call. = FALSE)
+  }
+
+  project_dir <- normalizePath(project_dir, mustWork = TRUE)
+  idx_path    <- .index_path(project_dir)
+
+  if (!file.exists(idx_path)) {
+    if (!quiet) message("No index found; building first...")
+    explicar_index_build(project_dir, quiet = quiet)
+  }
+
+  repo <- repo %||% .detect_github_repo(project_dir)
+  if (is.null(repo)) {
+    stop(
+      "Cannot detect GitHub repository. ",
+      "Provide 'repo' as \"owner/repo\" (e.g. \"CathalByrneGit/explicaR\").",
+      call. = FALSE
+    )
+  }
+
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = idx_path)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+
+  .ensure_schema(con)   # adds docs / doc_embeddings if not yet present
+
+  source_id <- paste0("deepwiki:", repo)
+
+  if (!force) {
+    n_existing <- DBI::dbGetQuery(
+      con,
+      sprintf("SELECT COUNT(*) AS n FROM docs WHERE source = '%s'",
+              gsub("'", "''", source_id))
+    )$n
+    if (n_existing > 0L) {
+      if (!quiet) {
+        message("Docs already indexed (", n_existing, " chunks). Use force=TRUE to re-fetch.")
+      }
+      return(invisible(n_existing))
+    }
+  }
+
+  if (!quiet) message("Fetching DeepWiki docs for ", repo, " ...")
+
+  pages <- .deepwiki_pages(repo)
+  if (length(pages) == 0L) {
+    if (!quiet) message("No pages returned from DeepWiki for ", repo)
+    return(invisible(0L))
+  }
+
+  if (!quiet) message("  Got ", length(pages), " page(s). Chunking...")
+
+  chunks <- .pages_to_chunks(pages, source_id, repo)
+  if (nrow(chunks) == 0L) return(invisible(0L))
+
+  # Remove old docs for this source before inserting
+  DBI::dbExecute(
+    con,
+    sprintf("DELETE FROM docs WHERE source = '%s'", gsub("'", "''", source_id))
+  )
+  DBI::dbWriteTable(con, "docs", chunks, append = TRUE)
+
+  if (!quiet) message("  Stored ", nrow(chunks), " chunk(s).")
+
+  if (embed) {
+    if (!ollama_available(embed_model, ollama_url)) {
+      if (!quiet) message("Skipping embeddings: Ollama unavailable.")
+    } else {
+      if (!quiet) message("Embedding doc chunks...")
+      .embed_doc_chunks(con, embed_model, ollama_url, quiet = quiet)
+    }
+  }
+
+  invisible(nrow(chunks))
+}
+
+#' Ask a question about the repository via DeepWiki
+#'
+#' Sends a question to the DeepWiki MCP `ask_question` tool and returns the
+#' answer as a character string.  This is a live network call — no local index
+#' is required.
+#'
+#' @param question    The question to ask.
+#' @param repo        GitHub repository in `"owner/repo"` format.  Auto-detected
+#'   if `NULL`.
+#' @param project_dir Path used for auto-detecting the repo.  Default `"."`.
+#'
+#' @return A character string with the answer, or `NA` on failure.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' explicar_ask_deepwiki("How does verb animation work?")
+#' explicar_ask_deepwiki("What does explicar_parse return?")
+#' }
+explicar_ask_deepwiki <- function(question,
+                                   repo        = NULL,
+                                   project_dir = ".") {
+  if (!requireNamespace("httr2", quietly = TRUE)) {
+    stop("Package 'httr2' is required.", call. = FALSE)
+  }
+
+  repo <- repo %||% .detect_github_repo(normalizePath(project_dir, mustWork = TRUE))
+  if (is.null(repo)) {
+    stop("Cannot detect GitHub repository. Provide 'repo'.", call. = FALSE)
+  }
+
+  result <- .deepwiki_call("ask_question",
+                            list(repoName = repo, question = question))
+  if (is.null(result)) return(NA_character_)
+  .extract_mcp_text(result)
+}
+
+# ---------------------------------------------------------------------------
+# DeepWiki MCP helpers
+# ---------------------------------------------------------------------------
+
+# Returns a list of page objects: list(slug, title, depth, content)
+.deepwiki_pages <- function(repo) {
+  result <- .deepwiki_call("read_wiki_contents", list(repoName = repo))
+  if (is.null(result)) return(list())
+
+  text <- .extract_mcp_text(result)
+  if (is.na(text) || !nchar(text)) return(list())
+
+  # The text field is itself a JSON document with a "pages" array
+  parsed <- tryCatch(
+    jsonlite::fromJSON(text, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  if (is.null(parsed)) return(list())
+
+  parsed$pages %||% list()
+}
+
+# POST a single tools/call to the DeepWiki MCP HTTP endpoint.
+# Returns the parsed JSON result object, or NULL on error.
+.deepwiki_call <- function(tool, args) {
+  body <- list(
+    jsonrpc = "2.0",
+    id      = 1L,
+    method  = "tools/call",
+    params  = list(name = tool, arguments = args)
+  )
+
+  tryCatch({
+    resp <- httr2::request("https://mcp.deepwiki.com/mcp") |>
+      httr2::req_headers(
+        "Content-Type" = "application/json",
+        "Accept"       = "application/json, text/event-stream"
+      ) |>
+      httr2::req_body_json(body) |>
+      httr2::req_timeout(120L) |>
+      httr2::req_error(is_error = \(r) FALSE) |>   # handle HTTP errors manually
+      httr2::req_perform()
+
+    raw_body <- httr2::resp_body_string(resp)
+    .parse_mcp_body(raw_body)
+  }, error = function(e) {
+    warning("DeepWiki MCP call failed: ", conditionMessage(e), call. = FALSE)
+    NULL
+  })
+}
+
+# Parse either a plain JSON response or an SSE stream from the MCP server.
+.parse_mcp_body <- function(body) {
+  body <- trimws(body)
+  if (!nchar(body)) return(NULL)
+
+  # SSE: lines begin with "data:"
+  if (startsWith(body, "data:") || grepl("\ndata:", body, fixed = TRUE)) {
+    lines      <- strsplit(body, "\n")[[1L]]
+    data_lines <- grep("^data:", lines, value = TRUE)
+
+    # Walk events from the end; the last non-ping event is the result
+    for (dl in rev(data_lines)) {
+      json_text <- sub("^data: ?", "", dl)
+      parsed    <- tryCatch(
+        jsonlite::fromJSON(json_text, simplifyVector = FALSE),
+        error = function(e) NULL
+      )
+      if (!is.null(parsed) && !is.null(parsed$result)) return(parsed$result)
+    }
+    return(NULL)
+  }
+
+  # Plain JSON
+  parsed <- tryCatch(
+    jsonlite::fromJSON(body, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  parsed$result %||% NULL
+}
+
+# Extract the text string from the MCP result's content array.
+.extract_mcp_text <- function(result) {
+  content <- result$content %||% list()
+  texts   <- vapply(content, function(c) {
+    if (identical(c$type, "text")) c$text %||% "" else ""
+  }, character(1L))
+  text <- paste(texts[nchar(texts) > 0L], collapse = "\n")
+  if (!nchar(text)) NA_character_ else text
+}
+
+# ---------------------------------------------------------------------------
+# Chunking
+# ---------------------------------------------------------------------------
+
+# Convert a list of DeepWiki page objects into a data.frame ready for DuckDB.
+.pages_to_chunks <- function(pages, source_id, repo, max_chars = 1200L) {
+  base_url   <- paste0("https://deepwiki.com/", repo, "/")
+  fetched_at <- as.numeric(Sys.time())
+  rows       <- list()
+
+  for (page in pages) {
+    slug    <- page$slug    %||% "unknown"
+    title   <- page$title   %||% slug
+    content <- page$content %||% ""
+    url     <- paste0(base_url, slug)
+
+    chunks <- .chunk_markdown(content, title, max_chars)
+
+    for (i in seq_along(chunks)) {
+      doc_id <- paste0(source_id, "/", slug, "/", i)
+      rows[[length(rows) + 1L]] <- data.frame(
+        doc_id     = doc_id,
+        source     = source_id,
+        url        = url,
+        page_title = title,
+        chunk_idx  = i,
+        context    = chunks[[i]]$context,
+        content    = chunks[[i]]$content,
+        fetched_at = fetched_at,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+
+  if (length(rows) == 0L) {
+    return(data.frame(doc_id = character(), source = character(),
+                      url = character(), page_title = character(),
+                      chunk_idx = integer(), context = character(),
+                      content = character(), fetched_at = double()))
+  }
+  do.call(rbind, rows)
+}
+
+# Split a markdown string into chunks, staying under max_chars.
+# Returns a list of list(context, content).
+.chunk_markdown <- function(md, page_title, max_chars = 1200L) {
+  if (!nchar(trimws(md))) return(list())
+
+  # Split at ## / ### headings
+  sections <- strsplit(md, "(?=\n#{1,3} )", perl = TRUE)[[1L]]
+  sections <- Filter(function(s) nchar(trimws(s)) > 0L, sections)
+
+  chunks <- list()
+
+  for (sec in sections) {
+    # Extract the heading as context label
+    heading <- regmatches(sec, regexpr("^#+[^\n]*", sec))
+    ctx     <- if (length(heading)) trimws(sub("^#+\\s*", "", heading)) else page_title
+    ctx     <- if (!nchar(ctx)) page_title else paste0(page_title, " > ", ctx)
+
+    if (nchar(sec) <= max_chars) {
+      chunks <- c(chunks, list(list(context = ctx, content = trimws(sec))))
+      next
+    }
+
+    # Long section: split at paragraph breaks
+    paras   <- strsplit(sec, "\n{2,}")[[1L]]
+    current <- ""
+
+    for (p in paras) {
+      if (nchar(current) + nchar(p) + 2L > max_chars && nchar(current) > 0L) {
+        chunks  <- c(chunks, list(list(context = ctx, content = trimws(current))))
+        current <- p
+      } else {
+        current <- if (!nchar(current)) p else paste(current, p, sep = "\n\n")
+      }
+    }
+    if (nchar(trimws(current)) > 0L) {
+      chunks <- c(chunks, list(list(context = ctx, content = trimws(current))))
+    }
+  }
+
+  chunks
+}
+
+# ---------------------------------------------------------------------------
+# Doc embedding helpers
+# ---------------------------------------------------------------------------
+
+.embed_doc_chunks <- function(con, model, ollama_url, quiet) {
+  candidates <- DBI::dbGetQuery(con, "
+    SELECT d.doc_id, d.context, d.content
+    FROM docs d
+    LEFT JOIN doc_embeddings e ON d.doc_id = e.doc_id
+    WHERE e.doc_id IS NULL
+  ")
+
+  if (nrow(candidates) == 0L) return(invisible())
+
+  total  <- nrow(candidates)
+  failed <- 0L
+
+  for (i in seq_len(total)) {
+    text <- paste0(candidates$context[[i]], "\n\n", candidates$content[[i]])
+    emb  <- .ollama_embed(text, model, ollama_url)
+    if (is.null(emb)) { failed <- failed + 1L; next }
+
+    dim_type    <- sprintf("FLOAT[%d]", length(emb))
+    emb_literal <- paste0("[", paste(emb, collapse = ","), "]")
+    DBI::dbExecute(con, sprintf(
+      "INSERT OR REPLACE INTO doc_embeddings VALUES ('%s', %s::%s)",
+      gsub("'", "''", candidates$doc_id[[i]]),
+      emb_literal,
+      dim_type
+    ))
+
+    if (!quiet && i %% 20L == 0L) message("  Embedded ", i, " / ", total, " doc chunks")
+  }
+
+  if (!quiet) {
+    message("Doc embeddings complete: ", total - failed, " stored, ", failed, " skipped.")
+  }
+  invisible()
+}
+
+# ---------------------------------------------------------------------------
+# Repo detection
+# ---------------------------------------------------------------------------
+
+.detect_github_repo <- function(project_dir) {
+  # 1. Try git remote
+  remote <- tryCatch(
+    system2("git", c("-C", shQuote(project_dir), "remote", "get-url", "origin"),
+            stdout = TRUE, stderr = FALSE),
+    error = function(e) character(0L)
+  )
+
+  url <- if (length(remote) && nchar(remote[[1L]])) {
+    remote[[1L]]
+  } else {
+    # 2. Fallback: URL field in DESCRIPTION
+    desc_path <- file.path(project_dir, "DESCRIPTION")
+    if (!file.exists(desc_path)) return(NULL)
+    lines    <- readLines(desc_path, warn = FALSE)
+    url_line <- grep("^URL:", lines, value = TRUE)
+    if (!length(url_line)) return(NULL)
+    trimws(strsplit(sub("^URL:\\s*", "", url_line[[1L]]), "[,\n]")[[1L]][[1L]])
+  }
+
+  m <- regmatches(url, regexpr("github\\.com[/:]([^/]+/[^/.]+)", url))
+  if (!length(m)) return(NULL)
+  sub("^github\\.com[/:]", "", m[[1L]])
 }
