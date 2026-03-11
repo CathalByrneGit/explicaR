@@ -36,15 +36,22 @@ explicar <- function(project_dir  = ".",
                      open         = TRUE) {
 
   message("explicaR: parsing project at ", normalizePath(project_dir))
-  parse_result <- explicar_parse(project_dir)
 
-  # Auto-detect execution mode and load snapshots if not supplied
-  if (is.null(snapshots)) {
-    mode <- explicar_mode(project_dir)
-    message("explicaR: mode = ", mode)
-    if (mode == "targets") {
-      snapshots <- shapes_from_targets(project_dir)
-    }
+  # Auto-detect execution mode
+  mode <- explicar_mode(project_dir)
+  message("explicaR: mode = ", mode)
+
+  if (mode == "targets") {
+    # Use targets-native graph: exact topology + user-written descriptions
+    message("explicaR: reading targets network")
+    tnet         <- targets_network(project_dir)
+    # Verb records still require script parsing (tar_network has no verb detail)
+    parse_result <- explicar_parse(project_dir)
+    parse_result$nodes <- tnet$nodes
+    parse_result$edges <- tnet$edges
+    if (is.null(snapshots)) snapshots <- shapes_from_targets(project_dir)
+  } else {
+    parse_result <- explicar_parse(project_dir)
   }
 
   # Attach data-shape badges to variable nodes
