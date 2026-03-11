@@ -226,27 +226,77 @@ test_that(".detect_github_repo reads URL from DESCRIPTION", {
   expect_equal(repo, "myorg/myrepo")
 })
 
-test_that("explicar_index_fetch_docs is idempotent without force", {
+test_that("explicar_index_build_docs is idempotent without force", {
   proj <- make_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  # Insert a fake doc row directly to simulate a previous fetch
+  # Add a DESCRIPTION so .read_pkg_name() works
+  writeLines(c("Package: testpkg", "Version: 0.1.0"),
+             file.path(proj, "DESCRIPTION"))
+
+  # Insert a fake doc row to simulate a previous build
   path <- explicar_index_build(proj, quiet = TRUE)
   con  <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
   DBI::dbExecute(con, "
     INSERT INTO docs VALUES (
-      'deepwiki:owner/repo/pg/1', 'deepwiki:owner/repo',
-      'https://deepwiki.com/owner/repo/pg', 'Page', 1,
-      'ctx', 'content', 0.0
+      'local:testpkg/README/1', 'local:testpkg',
+      'file:///some/README.md', 'README', 1,
+      'README', 'some content', 0.0
     )
   ")
   DBI::dbDisconnect(con, shutdown = TRUE)
 
-  # Should NOT call the network — returns early because docs already exist
   msg <- capture_messages(
-    explicar_index_fetch_docs("owner/repo", project_dir = proj, quiet = FALSE)
+    explicar_index_build_docs(proj, quiet = FALSE)
   )
   expect_true(any(grepl("already indexed", msg)))
+})
+
+test_that("explicar_index_build_docs indexes README", {
+  proj <- make_project()
+  on.exit(unlink(proj, recursive = TRUE))
+
+  writeLines(c("Package: testpkg", "Version: 0.1.0"),
+             file.path(proj, "DESCRIPTION"))
+  writeLines(c("# testpkg", "", "## Overview", "A test package.",
+               "", "## Usage", "Call `foo()` to do things."),
+             file.path(proj, "README.md"))
+
+  path <- explicar_index_build(proj, quiet = TRUE)
+  explicar_index_build_docs(proj, include = "readme", quiet = TRUE)
+
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+
+  docs <- DBI::dbGetQuery(con, "SELECT * FROM docs WHERE page_title = 'README'")
+  expect_true(nrow(docs) >= 1L)
+  expect_true(all(docs$source == "local:testpkg"))
+  expect_true(all(grepl("README", docs$url)))
+})
+
+test_that("explicar_index_build_docs indexes roxygen from R source", {
+  proj <- make_project()
+  on.exit(unlink(proj, recursive = TRUE))
+
+  writeLines(c("Package: testpkg", "Version: 0.1.0"),
+             file.path(proj, "DESCRIPTION"))
+  writeLines(c(
+    "#' Compute the mean of a vector",
+    "#'",
+    "#' @param x A numeric vector.",
+    "#' @return A single numeric value.",
+    "my_mean <- function(x) mean(x)"
+  ), file.path(proj, "R", "utils.R"))
+
+  path <- explicar_index_build(proj, quiet = TRUE)
+  explicar_index_build_docs(proj, include = "source", quiet = TRUE)
+
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+
+  docs <- DBI::dbGetQuery(con, "SELECT * FROM docs WHERE page_title LIKE '%mean%'")
+  expect_true(nrow(docs) >= 1L)
+  expect_true(grepl("my_mean", paste(docs$content, collapse = " ")))
 })
