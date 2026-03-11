@@ -1,0 +1,15 @@
+# R package artifacts
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+*.tar.gz
+
+# Generated index (DuckDB + WAL files)
+.explicar/
+
+# renv / packrat
+renv/library/
+packrat/lib/
+packrat/src/
