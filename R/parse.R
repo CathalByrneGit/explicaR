@@ -410,5 +410,10 @@ explicar_parse <- function(project_dir = ".", pattern = "\\.R$", recursive = FAL
     }, error = function(e) invisible(NULL))
   }
 
+  if (!length(all_sources)) {
+    return(tibble::tibble(name = character(), type = character(),
+                          file = character(), line = integer(),
+                          label = character(), shape_info = character()))
+  }
   dplyr::bind_rows(all_sources) |> dplyr::distinct(name, .keep_all = TRUE)
 }

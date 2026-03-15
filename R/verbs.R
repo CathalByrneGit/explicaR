@@ -164,7 +164,7 @@ verb_pivot_wider <- function(data_before, names_from, values_from,
 #' @export
 verb_descriptor <- function(verb_record, snapshots = list()) {
   fn          <- verb_record$fn_name
-  args        <- verb_record$args[[1]]
+  args        <- if (length(verb_record$args)) verb_record$args[[1]] else character(0)
   data_before <- snapshots[[verb_record$input_var]]
   data_after  <- snapshots[[verb_record$output_var]]
   args_text   <- if (length(args) > 1) paste(args[-1], collapse = ", ") else ""

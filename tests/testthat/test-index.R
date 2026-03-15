@@ -271,6 +271,7 @@ test_that("explicar_index_build_docs indexes roxygen from R source", {
 
   writeLines(c("Package: testpkg", "Version: 0.1.0"),
              file.path(proj, "DESCRIPTION"))
+  dir.create(file.path(proj, "R"), showWarnings = FALSE)
   writeLines(c(
     "#' Compute the mean of a vector",
     "#'",
