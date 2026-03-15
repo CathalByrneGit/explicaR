@@ -13,3 +13,4 @@
 renv/library/
 packrat/lib/
 packrat/src/
+.Rbuildignore
