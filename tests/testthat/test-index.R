@@ -8,12 +8,14 @@ skip_if_not_installed("DBI")
 make_project <- function() {
   dir <- tempfile("explicar_test_project_")
   dir.create(dir)
-  # Write a minimal R script so explicar_parse() has something to process
+  # Write a minimal R script so explicar_parse() has something to process.
+  # Use an in-memory data.frame so roxygen2::parse_file() can source the
+  # script without needing an external file on disk.
   writeLines(
     c(
       "library(dplyr)",
-      "raw_df   <- read.csv('data.csv')",
-      "clean_df <- raw_df |> filter(!is.na(id))"
+      "raw_df   <- data.frame(id = 1:5, x = c(1, 2, NA, 4, 5))",
+      "clean_df <- raw_df |> filter(!is.na(x))"
     ),
     file.path(dir, "clean.R")
   )

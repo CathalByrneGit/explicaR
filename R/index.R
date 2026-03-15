@@ -87,7 +87,7 @@ explicar_index_build <- function(project_dir = ".",
   .remove_file_entries(con, stale)
 
   # Parse the full project (CodeDepends needs all files together for edges)
-  parse_result <- explicar_parse(project_dir, pattern = pattern,
+  parse_result <- explicar_parse(project_dir, pattern = glob2rx(pattern),
                                  recursive = recursive)
 
   # Only insert nodes/verbs for stale files; replace all edges (graph topology)

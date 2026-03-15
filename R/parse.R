@@ -184,7 +184,7 @@ explicar_parse <- function(project_dir = ".", pattern = "\\.R$", recursive = FAL
     fns <- getNamespaceExports(pkg)
     is_verb <- vapply(fns, function(f) {
       tryCatch({
-        p <- names(formals(getExportedValue(pkg, f)))
+        p <- names(suppressWarnings(formals(getExportedValue(pkg, f))))
         length(p) > 0 && p[1] %in% first_arg_names
       }, error = function(e) FALSE)
     }, logical(1))
@@ -296,7 +296,7 @@ explicar_parse <- function(project_dir = ".", pattern = "\\.R$", recursive = FAL
     return(tibble::tibble())
   }
   tryCatch({
-    blocks <- roxygen2::parse_file(script)
+    blocks <- suppressWarnings(roxygen2::parse_file(script))
     if (length(blocks) == 0) return(tibble::tibble())
 
     purrr::map_dfr(blocks, function(blk) {
