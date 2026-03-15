@@ -1,7 +1,7 @@
 #' Parse R scripts to produce a pipeline edge list
 #'
-#' Uses `CodeDepends` for cross-script dependency analysis and
-#' `getParseData()` for fine-grained verb extraction within scripts.
+#' Uses `getParseData()` for both cross-script dependency analysis and
+#' fine-grained verb extraction within scripts.
 #'
 #' @param project_dir Path to the project directory containing R scripts.
 #' @param pattern Regex pattern to match R script files (default: `"\\.R$"`).
@@ -29,8 +29,8 @@ explicar_parse <- function(project_dir = ".", pattern = "\\.R$", recursive = FAL
     return(.empty_parse_result())
   }
 
-  # --- CodeDepends: cross-script dependency analysis ---
-  cd_result  <- .parse_with_codedepends(scripts)
+  # --- Native parse: cross-script dependency analysis ---
+  cd_result  <- .native_parse(scripts)
   cd_nodes   <- cd_result$nodes
   cd_edges   <- cd_result$edges
 
@@ -71,108 +71,24 @@ explicar_parse <- function(project_dir = ".", pattern = "\\.R$", recursive = FAL
 }
 
 
-#' Parse scripts with CodeDepends to extract variable-level dependencies
+#' Native dependency parser using getParseData()
+#'
+#' Two-pass approach:
+#'   Pass 1 — collect output variables and function calls per script.
+#'   Pass 2 — for each script, find reads of variables produced by *other*
+#'             scripts and emit "consumes" edges.
 #' @noRd
-.parse_with_codedepends <- function(scripts) {
-  if (!requireNamespace("CodeDepends", quietly = TRUE)) {
-    warning("CodeDepends not installed. Falling back to basic parse-data analysis.")
-    return(.fallback_parse(scripts))
-  }
+.native_parse <- function(scripts) {
+  all_nodes      <- list()
+  all_edges      <- list()
+  script_outputs <- list()   # script path -> character vector of output names
+  script_pd      <- list()   # script path -> parse-data frame (cache)
 
-  all_nodes <- list()
-  all_edges <- list()
-
+  # ── Pass 1: outputs, function calls, script/variable nodes ──────────────────
   for (script in scripts) {
     script_name <- basename(script)
 
-    tryCatch({
-      sc  <- CodeDepends::readScript(script)
-      inp <- CodeDepends::getInputs(sc)
-
-      # Each element of inp corresponds to one top-level expression
-      for (i in seq_along(inp)) {
-        info <- inp[[i]]
-
-        inputs  <- as.character(info@inputs)
-        outputs <- as.character(info@outputs)
-        fns     <- as.character(info@functions)
-
-        # Script node
-        all_nodes[[length(all_nodes) + 1]] <- tibble::tibble(
-          name      = script_name,
-          type      = "script",
-          file      = script,
-          line      = NA_integer_,
-          label     = script_name,
-          shape_info = NA_character_
-        )
-
-        # Variable nodes produced by this script
-        for (out in outputs) {
-          all_nodes[[length(all_nodes) + 1]] <- tibble::tibble(
-            name      = out,
-            type      = "variable",
-            file      = script,
-            line      = NA_integer_,
-            label     = out,
-            shape_info = NA_character_
-          )
-          all_edges[[length(all_edges) + 1]] <- tibble::tibble(
-            from = script_name,
-            to   = out,
-            type = "produces"
-          )
-        }
-
-        # Edges: variable → script (consumes)
-        for (inp_var in inputs) {
-          all_edges[[length(all_edges) + 1]] <- tibble::tibble(
-            from = inp_var,
-            to   = script_name,
-            type = "consumes"
-          )
-        }
-
-        # Function call edges
-        for (fn in fns) {
-          all_nodes[[length(all_nodes) + 1]] <- tibble::tibble(
-            name      = fn,
-            type      = "function",
-            file      = script,
-            line      = NA_integer_,
-            label     = fn,
-            shape_info = NA_character_
-          )
-          all_edges[[length(all_edges) + 1]] <- tibble::tibble(
-            from = script_name,
-            to   = fn,
-            type = "calls"
-          )
-        }
-      }
-    }, error = function(e) {
-      message("Could not parse script: ", script_name, " — ", conditionMessage(e))
-    })
-  }
-
-  nodes <- dplyr::bind_rows(all_nodes) |>
-    dplyr::distinct(name, .keep_all = TRUE)
-  edges <- dplyr::bind_rows(all_edges) |>
-    dplyr::distinct()
-
-  list(nodes = nodes, edges = edges)
-}
-
-
-#' Fallback parser using getParseData (no CodeDepends)
-#' @noRd
-.fallback_parse <- function(scripts) {
-  all_nodes <- list()
-  all_edges <- list()
-
-  for (script in scripts) {
-    script_name <- basename(script)
-    all_nodes[[length(all_nodes) + 1]] <- tibble::tibble(
+    all_nodes[[length(all_nodes) + 1L]] <- tibble::tibble(
       name = script_name, type = "script", file = script,
       line = NA_integer_, label = script_name, shape_info = NA_character_
     )
@@ -180,26 +96,61 @@ explicar_parse <- function(project_dir = ".", pattern = "\\.R$", recursive = FAL
     tryCatch({
       pd <- getParseData(parse(file = script, keep.source = TRUE))
       if (is.null(pd)) return(invisible(NULL))
+      script_pd[[script]] <- pd
 
-      # Find assignments: SYMBOL on left of LEFT_ASSIGN
-      assigns <- pd[pd$token == "LEFT_ASSIGN", ]
+      # Output variables: SYMBOL on LHS of <-
+      assigns  <- pd[pd$token == "LEFT_ASSIGN", ]
+      outputs  <- character(0L)
       for (i in seq_len(nrow(assigns))) {
         parent_id <- assigns$parent[i]
         lhs <- pd[pd$parent == parent_id & pd$token == "SYMBOL", ]
-        if (nrow(lhs) > 0) {
-          varname <- lhs$text[1]
-          all_nodes[[length(all_nodes) + 1]] <- tibble::tibble(
+        if (nrow(lhs) > 0L) {
+          varname <- lhs$text[1L]
+          outputs <- c(outputs, varname)
+          all_nodes[[length(all_nodes) + 1L]] <- tibble::tibble(
             name = varname, type = "variable", file = script,
             line = assigns$line1[i], label = varname, shape_info = NA_character_
           )
-          all_edges[[length(all_edges) + 1]] <- tibble::tibble(
+          all_edges[[length(all_edges) + 1L]] <- tibble::tibble(
             from = script_name, to = varname, type = "produces"
           )
         }
       }
+      script_outputs[[script]] <- outputs
+
+      # Function call nodes + "calls" edges
+      fn_calls <- unique(pd[pd$token == "SYMBOL_FUNCTION_CALL", "text"])
+      for (fn in fn_calls) {
+        all_nodes[[length(all_nodes) + 1L]] <- tibble::tibble(
+          name = fn, type = "function", file = script,
+          line = NA_integer_, label = fn, shape_info = NA_character_
+        )
+        all_edges[[length(all_edges) + 1L]] <- tibble::tibble(
+          from = script_name, to = fn, type = "calls"
+        )
+      }
     }, error = function(e) {
-      message("Parse error in ", script_name, ": ", conditionMessage(e))
+      message("Could not parse script: ", script_name, " — ", conditionMessage(e))
     })
+  }
+
+  # ── Pass 2: cross-script "consumes" edges ───────────────────────────────────
+  all_output_vars <- unique(unlist(script_outputs, use.names = FALSE))
+
+  for (script in scripts) {
+    pd <- script_pd[[script]]
+    if (is.null(pd)) next
+    script_name   <- basename(script)
+    local_outputs <- script_outputs[[script]] %||% character(0L)
+
+    # SYMBOL tokens that refer to a variable produced by another script
+    reads <- unique(pd[pd$token == "SYMBOL", "text"])
+    reads <- reads[reads %in% all_output_vars & !reads %in% local_outputs]
+    for (v in reads) {
+      all_edges[[length(all_edges) + 1L]] <- tibble::tibble(
+        from = v, to = script_name, type = "consumes"
+      )
+    }
   }
 
   list(
