@@ -317,14 +317,16 @@ explicar_report <- function(parse_result,
 
 #' Inline JavaScript for graph → animation panel interaction
 #' @noRd
+#' Inline JavaScript for graph -> animation panel interaction
+#' @noRd
 .report_js <- function() {
-  '
+  r"(
   (function() {
     // Wait for visNetwork to be ready, then attach click handler
     function attachClickHandler() {
       var container = document.getElementById("explicar-graph");
       if (!container) return;
-      // visNetwork stores its network object on the widget's HTMLwidget instance
+      
       var widget = HTMLWidgets.find("#explicar-graph");
       if (!widget || !widget.network) {
         setTimeout(attachClickHandler, 200);
@@ -343,7 +345,6 @@ explicar_report <- function(parse_result,
       var animations;
       try { animations = JSON.parse(dataEl.textContent); } catch(e) { return; }
 
-      // Look for an animation whose key contains the nodeId
       var match = null;
       for (var i = 0; i < animations.length; i++) {
         if (animations[i].key && animations[i].key.indexOf(nodeId) !== -1) {
@@ -367,7 +368,6 @@ explicar_report <- function(parse_result,
       hintEl.textContent    = match.description || "";
       contentEl.innerHTML   = match.html || "<p>No animation data.</p>";
 
-      // Re-execute any scripts embedded in the injected HTML (for widgets)
       Array.from(contentEl.querySelectorAll("script")).forEach(function(oldScript) {
         var newScript = document.createElement("script");
         if (oldScript.src) {
@@ -378,7 +378,6 @@ explicar_report <- function(parse_result,
         oldScript.parentNode.replaceChild(newScript, oldScript);
       });
 
-      // Scroll animation panel into view
       contentEl.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
@@ -388,7 +387,7 @@ explicar_report <- function(parse_result,
       attachClickHandler();
     }
   })();
-  '
+  )"
 }
 
 

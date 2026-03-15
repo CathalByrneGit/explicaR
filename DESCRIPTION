@@ -3,7 +3,7 @@ Title: Make R Data Pipelines Interpretable and Visual
 Version: 0.1.0
 Authors@R:
     person("Cathal", "Byrne", role = c("aut", "cre"),
-           email = "cathal@example.com")
+           email = "cathal470@gmail.com")
 Description: Generates interactive visual explanations of multi-script R
     data pipelines. At the macro level, produces a navigable dependency
     graph showing how scripts, functions, and variables relate. At the
