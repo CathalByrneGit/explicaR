@@ -39,7 +39,7 @@ test_that("verb_descriptor returns NULL for unknown verb", {
     input_var  = NA,
     output_var = NA,
     args       = list(),
-    pkg        = "dplyr"
+    pkg        = NA_character_
   )
   expect_null(verb_descriptor(rec))
 })

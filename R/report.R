@@ -36,15 +36,22 @@ explicar <- function(project_dir  = ".",
                      open         = TRUE) {
 
   message("explicaR: parsing project at ", normalizePath(project_dir))
-  parse_result <- explicar_parse(project_dir)
 
-  # Auto-detect execution mode and load snapshots if not supplied
-  if (is.null(snapshots)) {
-    mode <- explicar_mode(project_dir)
-    message("explicaR: mode = ", mode)
-    if (mode == "targets") {
-      snapshots <- shapes_from_targets(project_dir)
-    }
+  # Auto-detect execution mode
+  mode <- explicar_mode(project_dir)
+  message("explicaR: mode = ", mode)
+
+  if (mode == "targets") {
+    # Use targets-native graph: exact topology + user-written descriptions
+    message("explicaR: reading targets network")
+    tnet         <- targets_network(project_dir)
+    # Verb records still require script parsing (tar_network has no verb detail)
+    parse_result <- explicar_parse(project_dir)
+    parse_result$nodes <- tnet$nodes
+    parse_result$edges <- tnet$edges
+    if (is.null(snapshots)) snapshots <- shapes_from_targets(project_dir)
+  } else {
+    parse_result <- explicar_parse(project_dir)
   }
 
   # Attach data-shape badges to variable nodes
@@ -310,14 +317,16 @@ explicar_report <- function(parse_result,
 
 #' Inline JavaScript for graph → animation panel interaction
 #' @noRd
+#' Inline JavaScript for graph -> animation panel interaction
+#' @noRd
 .report_js <- function() {
-  '
+  r"(
   (function() {
     // Wait for visNetwork to be ready, then attach click handler
     function attachClickHandler() {
       var container = document.getElementById("explicar-graph");
       if (!container) return;
-      // visNetwork stores its network object on the widget's HTMLwidget instance
+      
       var widget = HTMLWidgets.find("#explicar-graph");
       if (!widget || !widget.network) {
         setTimeout(attachClickHandler, 200);
@@ -336,7 +345,6 @@ explicar_report <- function(parse_result,
       var animations;
       try { animations = JSON.parse(dataEl.textContent); } catch(e) { return; }
 
-      // Look for an animation whose key contains the nodeId
       var match = null;
       for (var i = 0; i < animations.length; i++) {
         if (animations[i].key && animations[i].key.indexOf(nodeId) !== -1) {
@@ -360,7 +368,6 @@ explicar_report <- function(parse_result,
       hintEl.textContent    = match.description || "";
       contentEl.innerHTML   = match.html || "<p>No animation data.</p>";
 
-      // Re-execute any scripts embedded in the injected HTML (for widgets)
       Array.from(contentEl.querySelectorAll("script")).forEach(function(oldScript) {
         var newScript = document.createElement("script");
         if (oldScript.src) {
@@ -371,7 +378,6 @@ explicar_report <- function(parse_result,
         oldScript.parentNode.replaceChild(newScript, oldScript);
       });
 
-      // Scroll animation panel into view
       contentEl.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
@@ -381,35 +387,12 @@ explicar_report <- function(parse_result,
       attachClickHandler();
     }
   })();
-  '
+  )"
 }
 
 
 #' Enrich node labels using LLM (internal, called when enrich=TRUE)
 #' @noRd
 .enrich_parse_result <- function(parse_result, model) {
-  if (!requireNamespace("httr2", quietly = TRUE)) {
-    message("httr2 not installed. Skipping LLM enrichment.")
-    return(parse_result)
-  }
-
-  fn_nodes <- parse_result$nodes[parse_result$nodes$type == "function" &
-                                    parse_result$nodes$label == parse_result$nodes$name, ]
-
-  if (nrow(fn_nodes) == 0) return(parse_result)
-
-  message("explicaR: enriching ", nrow(fn_nodes), " undocumented function nodes via LLM")
-
-  for (i in seq_len(nrow(fn_nodes))) {
-    nm <- fn_nodes$name[i]
-    enriched <- tryCatch(
-      enrich_node_label(nm, model = model),
-      error = function(e) NULL
-    )
-    if (!is.null(enriched) && nchar(enriched) > 0) {
-      parse_result$nodes$label[parse_result$nodes$name == nm] <- enriched
-    }
-  }
-
-  parse_result
+  enrich_parse_result(parse_result, model = model, quiet = FALSE)
 }

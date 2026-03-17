@@ -116,6 +116,14 @@ explicar_graph <- function(parse_result,
     if (!is.na(file))       parts <- c(parts, paste0("File: ", basename(file)))
     if (!is.na(line))       parts <- c(parts, paste0("Line: ", line))
     if (!is.na(shape_info)) parts <- c(parts, paste0("Shape: ", shape_info))
+    # targets-specific fields (present when targets_network() is used)
+    dots    <- list(...)
+    status  <- dots[["status"]]
+    seconds <- dots[["seconds"]]
+    if (!is.null(status)  && !is.na(status))
+      parts <- c(parts, paste0("Status: <b>", status, "</b>"))
+    if (!is.null(seconds) && !is.na(seconds))
+      parts <- c(parts, paste0("Time: ", round(seconds, 1), "s"))
     paste(parts, collapse = "<br>")
   })
 }
