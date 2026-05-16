@@ -291,7 +291,8 @@ explicar_ragnar_build <- function(project_dir = ".",
     store <- ragnar::ragnar_store_create(
       location   = store_path,
       embed      = embed_fn,
-      extra_cols = list(source = "", url = "", page_title = "")
+      extra_cols = data.frame(source = character(), url = character(),
+                              page_title = character())
     )
   }
 

@@ -268,13 +268,27 @@ str(pr)
 # )
 ```
 
+### LLM provider support
+
+All LLM-using functions accept any `ellmer::Chat` object:
+
+| Provider | Call |
+|---|---|
+| Ollama (local, free) | `chat_ollama("llama3.2")` |
+| OpenAI | `chat_openai(model = "gpt-4o-mini")` — reads `OPENAI_API_KEY` |
+| Anthropic | `chat_anthropic(model = "claude-haiku-4-5")` — reads `ANTHROPIC_API_KEY` |
+| Google Gemini | `chat_google_gemini()` — reads `GOOGLE_API_KEY` |
+| Groq | `chat_groq()` — reads `GROQ_API_KEY` |
+| AWS Bedrock | `chat_aws_bedrock()` |
+| llama.cpp / vLLM | `chat_openai_compatible(base_url = "http://...")` |
+
 ### Typical full pipeline (with LLM)
 
 ```r
 library(explicaR)
 library(ellmer)
 
-chat <- chat_ollama(model = "llama3.2")
+chat <- chat_ollama(model = "llama3.2")   # swap for any provider above
 
 # 1. Build code graph index
 explicar_index_build("path/to/project")

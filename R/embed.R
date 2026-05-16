@@ -171,17 +171,16 @@ explicar_semantic_retrieve <- function(query,
 # ── Internal: ingest nodes into ragnar ────────────────────────────────────────
 
 .ingest_nodes_ragnar <- function(store, db_path, batch_size, force, quiet) {
-  nodes <- tryCatch({
-    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = TRUE)
-    on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
-    if (!DBI::dbExistsTable(con, "nodes")) {
-      if (!quiet) message("  No nodes table — run explicar_index_build() first")
-      return(0L)
-    }
-    DBI::dbGetQuery(con, "SELECT name, type, file, line, label FROM nodes")
-  }, error = function(e) NULL)
+  # Try the unified store first; fall back to the legacy index.duckdb.
+  # explicar_index_build() writes to index.duckdb; explicar.duckdb holds the
+  # ragnar store + wiki. We read nodes from whichever file has them.
+  nodes <- .read_nodes_from_db(db_path) %||%
+           .read_nodes_from_db(.index_path_from_db(db_path))
 
-  if (is.null(nodes) || nrow(nodes) == 0L) return(0L)
+  if (is.null(nodes) || nrow(nodes) == 0L) {
+    if (!quiet) message("  No nodes found — run explicar_index_build() first")
+    return(0L)
+  }
 
   source_id  <- "nodes:code-graph"
   batch_size <- as.integer(batch_size)
@@ -213,6 +212,22 @@ explicar_semantic_retrieve <- function(query,
 
   if (!quiet && n > 0L) message("  nodes: ", n, " chunks embedded")
   n
+}
+
+.read_nodes_from_db <- function(db_path) {
+  if (!file.exists(db_path)) return(NULL)
+  tryCatch({
+    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = TRUE)
+    on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+    if (!DBI::dbExistsTable(con, "nodes")) return(NULL)
+    rows <- DBI::dbGetQuery(con, "SELECT name, type, file, line, label FROM nodes")
+    if (nrow(rows) == 0L) NULL else rows
+  }, error = function(e) NULL)
+}
+
+# Derive the legacy index.duckdb path from the explicar.duckdb path.
+.index_path_from_db <- function(explicar_db_path) {
+  file.path(dirname(explicar_db_path), "index.duckdb")
 }
 
 #' Format a node row as searchable text
