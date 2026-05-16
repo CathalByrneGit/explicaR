@@ -1,14 +1,19 @@
-#' Parse R scripts to produce a pipeline edge list
+#' Parse scripts to produce a pipeline edge list
 #'
-#' Dispatches to the best available parse backend in priority order:
-#' 1. **treesitter** (`treesitter` + `treesitter.r` packages)
-#' 2. **r** — base-R `getParseData()` (always available)
+#' Dispatches to the best available parse backend. R files are analysed in
+#' priority order: treesitter → base-R `getParseData()`. Python files are
+#' parsed when `languages` includes `"python"` (requires `treesitter.python`
+#' or falls back to a pure-regex approach).
 #'
-#' @param project_dir Path to the project directory containing R scripts.
-#' @param pattern Regex pattern to match R script files (default: `"\\.R$"`).
-#' @param recursive Logical; whether to search sub-directories (default: `FALSE`).
-#' @param backend One of `"auto"` (default), `"treesitter"`, or `"r"`. `"auto"`
-#'   tries backends from fastest/richest to most compatible.
+#' @param project_dir Path to the project directory containing scripts.
+#' @param pattern Regex pattern to match script files. When `NULL` (default)
+#'   it is derived from `languages`: `"\\.R$"` for R-only, `"\\.R$|\\.py$"`
+#'   for R + Python.
+#' @param recursive Logical; whether to search sub-directories (default `FALSE`).
+#' @param backend One of `"auto"` (default), `"treesitter"`, or `"r"`. Only
+#'   affects R files; Python files always use the best available Python backend.
+#' @param languages Character vector of languages to parse. Any subset of
+#'   `c("r", "python")`. Default `"r"`.
 #'
 #' @return A list with:
 #'   - `nodes`: tibble of nodes (name, type, file, line, label, shape_info)
@@ -19,36 +24,65 @@
 #'
 #' @examples
 #' \dontrun{
-#' result <- explicar_parse("path/to/my/project")
+#' # R only (default)
+#' result <- explicar_parse("path/to/project")
+#'
+#' # Mixed R + Python project
+#' result <- explicar_parse("path/to/project", languages = c("r", "python"))
 #' result$nodes
 #' result$edges
 #' }
 explicar_parse <- function(project_dir = ".",
-                           pattern     = "\\.R$",
+                           pattern     = NULL,
                            recursive   = FALSE,
-                           backend     = c("auto", "treesitter", "r")) {
-  backend <- match.arg(backend)
+                           backend     = c("auto", "treesitter", "r"),
+                           languages   = "r") {
+  backend   <- match.arg(backend)
+  languages <- tolower(languages)
+
+  if (is.null(pattern)) {
+    lang_pats <- c(r = "\\.R$", python = "\\.py$")
+    matched   <- lang_pats[names(lang_pats) %in% languages]
+    pattern   <- paste(matched, collapse = "|")
+  }
 
   scripts <- list.files(project_dir, pattern = pattern,
                         full.names = TRUE, recursive = recursive)
 
   if (length(scripts) == 0L) {
-    message("No R scripts found in: ", project_dir)
+    message("No scripts found in: ", project_dir)
     return(.empty_parse_result())
   }
 
-  result <- switch(backend,
-    auto       = .auto_dispatch(scripts),
-    treesitter = .parse_treesitter(scripts),
-    r          = .parse_r_fallback(scripts)
-  )
+  r_scripts  <- scripts[grepl("\\.R$",  scripts)]
+  py_scripts <- scripts[grepl("\\.py$", scripts)]
 
-  # Roxygen enrichment is backend-agnostic
-  roxy_labels <- purrr::map_dfr(scripts, .extract_roxygen)
+  # Parse R files
+  r_result <- if (length(r_scripts) > 0L) {
+    switch(backend,
+      auto       = .auto_dispatch(r_scripts),
+      treesitter = .parse_treesitter(r_scripts),
+      r          = .parse_r_fallback(r_scripts)
+    )
+  } else {
+    .empty_parse_result()
+  }
+
+  # Parse Python files
+  py_result <- if (length(py_scripts) > 0L && "python" %in% languages) {
+    .auto_dispatch_python(py_scripts)
+  } else {
+    .empty_parse_result()
+  }
+
+  result <- .merge_parse_results(r_result, py_result)
+
+  # Roxygen enrichment (R files only)
+  roxy_labels <- purrr::map_dfr(r_scripts, .extract_roxygen)
   result$nodes <- .merge_roxygen(result$nodes, roxy_labels)
 
-  # Raw data source file references
-  source_nodes <- .extract_source_files(scripts, project_dir)
+  # Raw data source file references (R files only — Python imports handled above)
+  source_nodes <- .extract_source_files(r_scripts, project_dir)
   result$nodes <- dplyr::bind_rows(result$nodes, source_nodes) |>
     dplyr::distinct(name, .keep_all = TRUE)
 
@@ -64,6 +98,18 @@ explicar_parse <- function(project_dir = ".",
     if (!is.null(result)) return(result)
   }
   .parse_r_fallback(scripts)
+}
+
+#' Combine two parse results (nodes de-duped, edges de-duped, verbs appended)
+#' @noRd
+.merge_parse_results <- function(a, b) {
+  list(
+    nodes = dplyr::bind_rows(a$nodes, b$nodes) |>
+      dplyr::distinct(name, .keep_all = TRUE),
+    edges = dplyr::bind_rows(a$edges, b$edges) |>
+      dplyr::distinct(),
+    verbs = dplyr::bind_rows(a$verbs, b$verbs)
+  )
 }
 
 
