@@ -46,8 +46,7 @@ directory when set).}
 
 \item{languages}{Languages to parse: \code{c("r")} (default), \code{c("r","python")}.}
 
-\item{snapshots}{Optional named list of intermediate dataframes (from
-\code{\link[=with_pipeline_trace]{with_pipeline_trace()}} or \code{\link[=explicar_targets]{explicar_targets()}}).}
+\item{snapshots}{Optional named list of intermediate dataframes.}
 
 \item{llm}{Logical; generate LLM wiki pages (requires ellmer + Ollama or
 an explicit \code{llm_chat}). Default \code{FALSE}.}

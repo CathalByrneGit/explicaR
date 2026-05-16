@@ -4,9 +4,3 @@ test_that("targets_available returns FALSE when targets not installed", {
   expect_type(result, "logical")
   expect_length(result, 1L)
 })
-
-test_that("explicar_targets returns empty list when no cache", {
-  result <- explicar_targets(tempdir())
-  expect_type(result, "list")
-  expect_length(result, 0L)
-})

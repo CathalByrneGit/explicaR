@@ -213,30 +213,3 @@ explicar_parse <- function(project_dir = ".",
   dplyr::bind_rows(all_sources) |> dplyr::distinct(name, .keep_all = TRUE)
 }
 
-
-#' Attach data-shape information to variable nodes
-#'
-#' Call this after running your pipeline (or reading from targets cache) to
-#' annotate variable nodes with their `nrow × ncol` badge.
-#'
-#' @param parse_result Output from [explicar_parse()].
-#' @param shapes A named list where each element is a dataframe/tibble and
-#'   the name matches the variable name in the parse result.
-#'
-#' @return The modified `parse_result` with `shape_info` populated on
-#'   matching variable nodes.
-#' @export
-attach_shapes <- function(parse_result, shapes) {
-  if (!is.list(shapes)) stop("`shapes` must be a named list of dataframes.")
-
-  parse_result$nodes <- parse_result$nodes |>
-    dplyr::mutate(shape_info = purrr::map_chr(name, function(nm) {
-      if (nm %in% names(shapes)) {
-        df <- shapes[[nm]]
-        if (is.data.frame(df)) return(paste0(nrow(df), " \u00D7 ", ncol(df)))
-      }
-      NA_character_
-    }))
-
-  parse_result
-}

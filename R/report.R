@@ -115,8 +115,6 @@ explicar <- function(project_dir  = ".",
     parse_result <- explicar_parse(project_dir, languages = languages)
     parse_result$nodes <- tnet$nodes
     parse_result$edges <- tnet$edges
-    shapes <- shapes_from_targets(project_dir)
-    if (length(shapes) > 0L) parse_result <- attach_shapes(parse_result, shapes)
   } else {
     parse_result <- explicar_parse(project_dir, languages = languages)
   }
