@@ -287,3 +287,14 @@ explicar_animate <- function(parse_result,
     )
   )
 }
+
+#' @noRd
+.fallback_html_widget <- function(desc) {
+  html <- paste0(
+    "<div style='font-family:monospace;padding:8px;background:#f5f5f5'>",
+    "<b>", desc$verb, "</b>: ", nrow(desc$data_before %||% data.frame()), " rows",
+    if (!is.null(desc$data_after)) paste0(" \\u2192 ", nrow(desc$data_after), " rows") else "",
+    "</div>"
+  )
+  structure(list(html = html), class = "html_fallback")
+}

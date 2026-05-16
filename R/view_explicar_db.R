@@ -188,7 +188,7 @@ view_explicar_db <- function(project_dir = ".",
   on.exit({
     httpuv::stopServer(srv)
     if (!is.null(store)) {
-      tryCatch(ragnar::ragnar_store_disconnect(store), error = function(e) invisible())
+      tryCatch(DBI::dbDisconnect(store@con, shutdown = TRUE), error = function(e) invisible())
     }
     message("explicaR server stopped.")
   }, add = TRUE)
@@ -234,9 +234,9 @@ view_explicar_db <- function(project_dir = ".",
   })
 
   id_map <- .mermaid_id_map(parse_result$nodes)
-  title  <- paste0("explicaR — ", basename(project_dir))
-  stats  <- paste0(nrow(parse_result$nodes), " nodes · ",
-                   nrow(parse_result$edges), " edges · ",
+  title  <- paste0("explicaR \u2014 ", basename(project_dir))
+  stats  <- paste0(nrow(parse_result$nodes), " nodes \u00B7 ",
+                   nrow(parse_result$edges), " edges \u00B7 ",
                    length(wiki_data), " wiki pages")
 
   tmpl <- paste(readLines(tmpl_path, warn = FALSE), collapse = "\n")

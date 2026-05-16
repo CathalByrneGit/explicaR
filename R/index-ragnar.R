@@ -256,7 +256,7 @@ explicar_ragnar_build <- function(project_dir = ".",
   # Resolve embedding function
   embed_fn <- if (embed) .ragnar_embed_fn(ollama_url, embed_model) else NULL
   if (embed && is.null(embed_fn) && !quiet) {
-    message("Ollama unavailable — building BM25-only store (no vector embeddings).")
+    message("Ollama unavailable \u2014 building BM25-only store (no vector embeddings).")
   }
 
   # Create or open store

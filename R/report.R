@@ -38,6 +38,7 @@
 #' @param open Open the viewer in the browser. Default `TRUE`.
 #' @param db_extensions Logical; reserved for future DuckDB extension support.
 #'   Default `FALSE`.
+#' @param project_path Deprecated alias for `project_dir`.
 #'
 #' @return Invisibly, the path to the generated HTML file.
 #' @export
@@ -99,7 +100,7 @@ explicar <- function(project_dir  = ".",
   }
 
   if (is.null(title)) {
-    title <- paste0("explicaR — ", basename(project_dir))
+    title <- paste0("explicaR \u2014 ", basename(project_dir))
   }
 
   # Resolve output path
@@ -202,6 +203,7 @@ explicar <- function(project_dir  = ".",
 #' Build the pipeline graph (deprecated wrapper)
 #' @description Thin wrapper around [explicar_graph()].
 #' @inheritParams explicar_graph
+#' @param ... Additional arguments passed to [explicar_graph()].
 #' @return A Mermaid flowchart string.
 #' @export
 explicar_report <- function(parse_result, ...) {

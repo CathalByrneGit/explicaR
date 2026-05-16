@@ -121,7 +121,7 @@ explicar_wiki_build <- function(project_dir = ".",
       tryCatch(
         .wiki_generate_page(script, script_name, parse_result, llm_chat),
         error = function(e) {
-          if (!quiet) message("    LLM failed — using fallback: ", conditionMessage(e))
+          if (!quiet) message("    LLM failed \u2014 using fallback: ", conditionMessage(e))
           .wiki_fallback_page(script, script_name, parse_result)
         }
       )
@@ -206,7 +206,7 @@ deep_research <- function(chat, question, max_iterations = 5L) {
     "## Overview\n",
     "2-3 sentences: what this file does and its role in the project.\n\n",
     "## Key Functions / Objects\n",
-    "Bullet list: - `name()` — one-line description per item.\n\n",
+    "Bullet list: - `name()` \u2014 one-line description per item.\n\n",
     "## How It Works\n",
     "2-4 sentences on the implementation approach or key patterns.\n\n",
     "## Usage Example\n",
@@ -262,7 +262,7 @@ deep_research <- function(chat, question, max_iterations = 5L) {
     bullets  <- paste0(
       "- `", fn_nodes$name, "()`",
       ifelse(!is.na(fn_nodes$label) & fn_nodes$label != fn_nodes$name,
-             paste0(" — ", fn_nodes$label), ""),
+             paste0(" \u2014 ", fn_nodes$label), ""),
       collapse = "\n"
     )
     sections <- paste0(sections, bullets, "\n\n")
@@ -328,13 +328,13 @@ deep_research <- function(chat, question, max_iterations = 5L) {
 
 .wiki_auto_chat <- function(model, ollama_url, quiet) {
   if (!requireNamespace("ellmer", quietly = TRUE)) {
-    if (!quiet) message("'ellmer' not installed — using roxygen fallback")
+    if (!quiet) message("'ellmer' not installed \u2014 using roxygen fallback")
     return(NULL)
   }
   tryCatch(
     ellmer::chat_ollama(model = model, base_url = ollama_url),
     error = function(e) {
-      if (!quiet) message("Ollama unavailable — using roxygen fallback")
+      if (!quiet) message("Ollama unavailable \u2014 using roxygen fallback")
       NULL
     }
   )

@@ -160,7 +160,7 @@ explicar_index_retrieve <- function(query,
     result <- tryCatch({
       store <- ragnar::ragnar_store_connect(explicar_db, read_only = TRUE)
       res   <- ragnar::ragnar_retrieve(store, query, top_k = as.integer(top_k) * 2L)
-      tryCatch(ragnar::ragnar_store_disconnect(store), error = function(e) invisible())
+      tryCatch(DBI::dbDisconnect(store@con, shutdown = TRUE), error = function(e) invisible())
 
       node_rows <- res[!is.na(res$source) & res$source == "nodes:code-graph", , drop = FALSE]
       if (nrow(node_rows) == 0L) return(NULL)

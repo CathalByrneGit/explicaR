@@ -77,7 +77,7 @@
         )
       }
     }, error = function(e) {
-      message("Could not parse: ", script_name, " — ", conditionMessage(e))
+      message("Could not parse: ", script_name, " \u2014 ", conditionMessage(e))
     })
   }
 

@@ -90,7 +90,7 @@ explicar_ingest <- function(project_dir = ".",
     n_total <- n_total + n
   }
 
-  if (!quiet) message("Building ragnar index…")
+  if (!quiet) message("Building ragnar index\u2026")
   tryCatch(ragnar::ragnar_store_build_index(store), error = function(e) invisible())
 
   if (!quiet) message("Ingested ", n_total, " chunks into ", db_path)
@@ -106,7 +106,7 @@ explicar_ingest <- function(project_dir = ".",
     con <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = TRUE)
     on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
     if (!DBI::dbExistsTable(con, "wiki")) {
-      if (!quiet) message("  No wiki table — run explicar_wiki_build() first")
+      if (!quiet) message("  No wiki table \u2014 run explicar_wiki_build() first")
       return(0L)
     }
     DBI::dbGetQuery(con,

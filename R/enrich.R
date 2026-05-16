@@ -64,7 +64,7 @@ enrich_node_label <- function(fn_name_or_body,
 
     if (httr2::resp_status(resp) != 200L) {
       message("Ollama returned HTTP ", httr2::resp_status(resp),
-              " — check that Ollama is running and model '", model, "' is pulled.")
+              " \u2014 check that Ollama is running and model '", model, "' is pulled.")
       return(NA_character_)
     }
 
@@ -163,7 +163,7 @@ enrich_parse_result <- function(parse_result,
 
   n_to_enrich <- sum(fn_mask)
   if (n_to_enrich == 0L) {
-    if (!quiet) message("All function nodes already have labels — nothing to enrich.")
+    if (!quiet) message("All function nodes already have labels \u2014 nothing to enrich.")
     return(parse_result)
   }
 

@@ -61,7 +61,7 @@ explicar_embed <- function(project_dir = ".",
 
   # Bail early if Ollama is not reachable
   if (!ollama_available(model, ollama_url)) {
-    if (!quiet) message("explicaR: Ollama unavailable — skipping vector embeddings")
+    if (!quiet) message("explicaR: Ollama unavailable \u2014 skipping vector embeddings")
     return(invisible(0L))
   }
   embed_fn <- ragnar::embed_ollama(model = model, base_url = ollama_url)
@@ -96,7 +96,7 @@ explicar_embed <- function(project_dir = ".",
     )
   }
 
-  if (!quiet) message("explicaR: embed complete — ", n_nodes, " node chunks")
+  if (!quiet) message("explicaR: embed complete \u2014 ", n_nodes, " node chunks")
   invisible(n_nodes)
 }
 
@@ -175,7 +175,7 @@ explicar_semantic_retrieve <- function(query,
            .read_nodes_from_db(.index_path_from_db(db_path))
 
   if (is.null(nodes) || nrow(nodes) == 0L) {
-    if (!quiet) message("  No nodes found — run explicar_index_build() first")
+    if (!quiet) message("  No nodes found \u2014 run explicar_index_build() first")
     return(0L)
   }
 
@@ -228,7 +228,7 @@ explicar_semantic_retrieve <- function(query,
 }
 
 #' Format a node row as searchable text
-#' Pattern: "type: `name` — label [file:line]"
+#' Pattern: "type: `name` - label \[file:line\]"
 #' @noRd
 .node_to_text_embed <- function(nd) {
   type_lbl <- switch(as.character(nd$type %||% ""),
@@ -246,7 +246,7 @@ explicar_semantic_retrieve <- function(query,
   name <- if (is.na(name_raw)) "" else as.character(name_raw)
 
   if (nzchar(lbl) && lbl != name) {
-    out <- paste0(out, " — ", lbl)
+    out <- paste0(out, " \u2014 ", lbl)
   }
 
   file_raw <- nd$file %||% NA_character_
@@ -268,7 +268,7 @@ explicar_semantic_retrieve <- function(query,
 #' Reverses the format produced by .node_to_text_embed().
 #' @noRd
 .parse_node_text <- function(texts) {
-  pat <- "^(.+?):\\s+`([^`]+)`(?:\\s+—\\s+(.+?))?(?:\\s+\\[(.+?)(?::(\\d+))?\\])?$"
+  pat <- "^(.+?):\\s+`([^`]+)`(?:\\s+\u2014\\s+(.+?))?(?:\\s+\\[(.+?)(?::(\\d+))?\\])?$"
   m   <- regmatches(texts, regexec(pat, texts, perl = TRUE))
 
   pick <- function(lst, idx, default = NA_character_) {

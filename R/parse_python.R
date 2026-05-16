@@ -99,7 +99,7 @@
         )
       }
     }, error = function(e) {
-      message("treesitter.python failed for: ", script_name, " — ", conditionMessage(e))
+      message("treesitter.python failed for: ", script_name, " \u2014 ", conditionMessage(e))
     })
   }
 
@@ -206,7 +206,7 @@
         )
       }
     }, error = function(e) {
-      message("Could not parse Python script: ", script_name, " — ", conditionMessage(e))
+      message("Could not parse Python script: ", script_name, " \u2014 ", conditionMessage(e))
     })
   }
 

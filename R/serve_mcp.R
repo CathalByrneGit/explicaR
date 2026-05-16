@@ -75,7 +75,7 @@ serve_explicar_mcp <- function(project_dir = ".", db_path = NULL) {
     )
   } else NULL
   on.exit({
-    if (!is.null(store)) try(ragnar::ragnar_store_disconnect(store), silent = TRUE)
+    if (!is.null(store)) try(DBI::dbDisconnect(store@con, shutdown = TRUE), silent = TRUE)
   }, add = TRUE)
 
   .mcp_write <- function(obj) {
@@ -245,7 +245,7 @@ serve_explicar_mcp <- function(project_dir = ".", db_path = NULL) {
     )
     text <- if (!is.null(rows) && nrow(rows) > 0L) {
       paste(apply(rows, 1, function(r) {
-        lbl <- if (!is.na(r[["label"]]) && r[["label"]] != r[["name"]]) paste0(" — ", r[["label"]]) else ""
+        lbl <- if (!is.na(r[["label"]]) && r[["label"]] != r[["name"]]) paste0(" \u2014 ", r[["label"]]) else ""
         loc <- if (!is.na(r[["file"]])) paste0(" (", r[["file"]], ":", r[["line"]], ")") else ""
         paste0("- **`", r[["name"]], "`** [", r[["type"]], "]", lbl, loc)
       }), collapse = "\n")

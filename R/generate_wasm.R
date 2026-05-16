@@ -33,7 +33,7 @@ generate_wasm_viewer <- function(parse_result,
                                  open        = TRUE,
                                  quiet       = FALSE) {
 
-  if (is.null(title)) title <- "explicaR — WASM Viewer"
+  if (is.null(title)) title <- "explicaR \u2014 WASM Viewer"
 
   if (!quiet) message("explicaR: building Mermaid graph")
   graph_text <- explicar_graph(parse_result, direction = direction)
@@ -71,8 +71,8 @@ generate_wasm_viewer <- function(parse_result,
   })
 
   stats <- paste0(
-    nrow(parse_result$nodes), " nodes · ",
-    nrow(parse_result$edges), " edges · ",
+    nrow(parse_result$nodes), " nodes \u00B7 ",
+    nrow(parse_result$edges), " edges \u00B7 ",
     nrow(parse_result$verbs), " verb calls"
   )
 

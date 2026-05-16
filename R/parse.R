@@ -222,7 +222,7 @@ attach_shapes <- function(parse_result, shapes) {
     dplyr::mutate(shape_info = purrr::map_chr(name, function(nm) {
       if (nm %in% names(shapes)) {
         df <- shapes[[nm]]
-        if (is.data.frame(df)) return(paste0(nrow(df), " × ", ncol(df)))
+        if (is.data.frame(df)) return(paste0(nrow(df), " \u00D7 ", ncol(df)))
       }
       NA_character_
     }))

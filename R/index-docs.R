@@ -54,7 +54,7 @@ explicar_index_build_docs <- function(project_dir = ".",
   idx_path    <- .index_path(project_dir)
 
   if (!file.exists(idx_path)) {
-    if (!quiet) message("No index found — building code index first...")
+    if (!quiet) message("No index found \u2014 building code index first...")
     explicar_index_build(project_dir, quiet = quiet)
   }
 
@@ -549,7 +549,7 @@ explicar_index_generate_wiki <- function(project_dir    = ".",
   idx_path    <- .index_path(project_dir)
 
   if (!file.exists(idx_path)) {
-    if (!quiet) message("No index found — building code index first...")
+    if (!quiet) message("No index found \u2014 building code index first...")
     explicar_index_build(project_dir, quiet = quiet)
   }
 
@@ -602,7 +602,7 @@ explicar_index_generate_wiki <- function(project_dir    = ".",
       wiki_md <- .ollama_generate(prompt, model, ollama_url)
 
       if (is.null(wiki_md)) {
-        if (!quiet) message("    [skipped — model returned empty response]")
+        if (!quiet) message("    [skipped \u2014 model returned empty response]")
         next
       }
 
@@ -648,7 +648,7 @@ explicar_index_generate_wiki <- function(project_dir    = ".",
     arch_md     <- .ollama_generate(arch_prompt, model, ollama_url)
 
     if (!is.null(arch_md)) {
-      title  <- .first_heading(arch_md) %||% paste0(pkg_name, " — Architecture")
+      title  <- .first_heading(arch_md) %||% paste0(pkg_name, " \u2014 Architecture")
       chunks <- .chunk_markdown(arch_md, title)
 
       for (i in seq_along(chunks)) {
@@ -765,7 +765,7 @@ explicar_index_generate_wiki <- function(project_dir    = ".",
     "You are a software architect documenting the R package '", pkg_name, "'.\n",
     "Write a high-level architecture overview wiki page in markdown.\n\n",
     "Your page must include:\n",
-    "1. A # heading: '", pkg_name, " — Architecture'.\n",
+    "1. A # heading: '", pkg_name, " \u2014 Architecture'.\n",
     "2. An 'Overview' section: what the package does and its main goals.\n",
     "3. A 'Module Map' section: describe each source file and its role,\n",
     "   and how the files depend on or call each other.\n",
@@ -776,4 +776,9 @@ explicar_index_generate_wiki <- function(project_dir    = ".",
     "Write in clear prose with markdown ## headings for each section.\n\n",
     "Package structure:\n\n", files_block
   )
+}
+
+#' @noRd
+.embed_doc_chunks <- function(con, embed_model, ollama_url, quiet = FALSE) {
+  invisible(NULL)
 }

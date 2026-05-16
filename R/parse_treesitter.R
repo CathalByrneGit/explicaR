@@ -73,7 +73,7 @@
       }
     }, error = function(e) {
       message("treesitter parse failed for: ", script_name,
-              " — ", conditionMessage(e))
+              " \u2014 ", conditionMessage(e))
     })
   }
 

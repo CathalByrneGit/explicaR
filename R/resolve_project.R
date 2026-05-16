@@ -49,11 +49,11 @@ resolve_project <- function(project_dir, git_pat = NULL, update = TRUE) {
 
   if (dir.exists(cache_path)) {
     if (isTRUE(update)) {
-      message("explicaR: pulling latest changes for ", parsed$repo, "…")
+      message("explicaR: pulling latest changes for ", parsed$repo, "\u2026")
       .git_pull(cache_path, git_pat = git_pat, host = parsed$host)
     }
   } else {
-    message("explicaR: cloning ", parsed$url, "…")
+    message("explicaR: cloning ", parsed$url, "\u2026")
     .git_clone(parsed$url, cache_path, parsed$host, git_pat = git_pat)
   }
 
@@ -99,7 +99,7 @@ resolve_project <- function(project_dir, git_pat = NULL, update = TRUE) {
     tryCatch(
       git2r::clone(url, dest_path, credentials = cred),
       error = function(e) {
-        message("  git2r clone failed: ", conditionMessage(e), " — trying system git")
+        message("  git2r clone failed: ", conditionMessage(e), " \u2014 trying system git")
         .git_system_clone(url, dest_path)
       }
     )
@@ -115,7 +115,7 @@ resolve_project <- function(project_dir, git_pat = NULL, update = TRUE) {
       cred <- if (!is.null(host)) .git_cred(host, git_pat) else NULL
       git2r::pull(repo, credentials = cred)
     }, error = function(e) {
-      message("  git2r pull failed: ", conditionMessage(e), " — trying system git")
+      message("  git2r pull failed: ", conditionMessage(e), " \u2014 trying system git")
       .git_system_pull(repo_path)
     })
   } else {

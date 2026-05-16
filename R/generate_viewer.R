@@ -62,8 +62,8 @@ generate_viewer <- function(parse_result,
   })
 
   stats <- paste0(
-    nrow(parse_result$nodes), " nodes · ",
-    nrow(parse_result$edges), " edges · ",
+    nrow(parse_result$nodes), " nodes \u00B7 ",
+    nrow(parse_result$edges), " edges \u00B7 ",
     nrow(parse_result$verbs), " verb calls"
   )
 

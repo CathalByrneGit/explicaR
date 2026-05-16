@@ -48,7 +48,7 @@ explicar_graph <- function(parse_result,
       label <- paste0(label, "\n", node$shape_info)
     }
     if (nchar(label) > max_label) {
-      label <- paste0(substr(label, 1L, max_label - 1L), "…")
+      label <- paste0(substr(label, 1L, max_label - 1L), "\u2026")
     }
     label <- .mermaid_escape(label)
 
