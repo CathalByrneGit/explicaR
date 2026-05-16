@@ -34,7 +34,7 @@
 #' }
 explicar_parse <- function(project_dir = ".",
                            pattern     = NULL,
-                           recursive   = FALSE,
+                           recursive   = TRUE,
                            backend     = c("auto", "treesitter", "r"),
                            languages   = "r") {
   backend   <- match.arg(backend)
@@ -46,8 +46,20 @@ explicar_parse <- function(project_dir = ".",
     pattern   <- paste(matched, collapse = "|")
   }
 
-  scripts <- list.files(project_dir, pattern = pattern,
-                        full.names = TRUE, recursive = recursive)
+  # For R packages scan R/ only; avoids executing inst/examples, tests, etc.
+  is_pkg <- file.exists(file.path(project_dir, "DESCRIPTION")) &&
+            dir.exists(file.path(project_dir, "R"))
+  search_dirs <- if (is_pkg) {
+    c(file.path(project_dir, "R"),
+      if ("python" %in% languages && dir.exists(file.path(project_dir, "src")))
+        file.path(project_dir, "src") else character(0L))
+  } else {
+    project_dir
+  }
+
+  scripts <- unlist(lapply(search_dirs, list.files,
+                           pattern = pattern, full.names = TRUE,
+                           recursive = recursive), use.names = FALSE)
 
   if (length(scripts) == 0L) {
     message("No scripts found in: ", project_dir)
