@@ -264,9 +264,19 @@
   </section>
 
   <section class="ex-detail-panel">
-    <div class="ex-panel-title" id="ex-detail-title">Detail Panel</div>
-    <div id="ex-detail-wrap">
-      <p class="ex-hint">Click a node in the graph to see details here.</p>
+    <div style="display:flex;border-bottom:1px solid var(--border);background:#fff;flex:0 0 auto">
+      <button class="ex-vtab active" data-vtab="detail" style="padding:.4rem .85rem;font-size:.8rem;font-weight:600;cursor:pointer;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted)">Detail</button>
+      <button class="ex-vtab" data-vtab="wiki" id="ex-wiki-tab" style="padding:.4rem .85rem;font-size:.8rem;font-weight:600;cursor:pointer;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted)">Wiki</button>
+    </div>
+    <div class="ex-vtab-content active" id="vtab-detail" style="flex:1 1 0;display:flex;flex-direction:column;overflow:hidden">
+      <div id="ex-detail-wrap" style="flex:1 1 0;overflow-y:auto;padding:.75rem">
+        <p class="ex-hint">Click a node in the graph to see details here.</p>
+      </div>
+    </div>
+    <div class="ex-vtab-content" id="vtab-wiki" style="flex:1 1 0;display:none;flex-direction:column;overflow:hidden">
+      <div id="ex-wiki-wrap" style="flex:1 1 0;overflow-y:auto;padding:.75rem">
+        <p class="ex-hint">Click a script node to see its wiki page.</p>
+      </div>
     </div>
   </section>
 
@@ -282,6 +292,7 @@
 <script type="application/json" id="ex-verb-data">{{VERB_DATA_JSON}}</script>
 <script type="application/json" id="ex-node-data">{{NODE_DATA_JSON}}</script>
 <script type="application/json" id="ex-id-map">{{ID_MAP_JSON}}</script>
+<script type="application/json" id="ex-wiki-data">{{WIKI_DATA_JSON}}</script>
 
 <!-- Mermaid.js (requires internet connection to render the graph) -->
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
@@ -300,6 +311,7 @@
   var verbData = loadJSON("ex-verb-data");   // { "filter@clean.R:5": "<html>" }
   var nodeData = loadJSON("ex-node-data");   // [ { name, type, file, line, ... } ]
   var idMap    = loadJSON("ex-id-map");      // { "Mermaid_id": "original name" }
+  var wikiData = loadJSON("ex-wiki-data");   // { "/path/to/file.R": "markdown..." }
 
   // Build name → node-info lookup
   var nodeLookup = {};
@@ -307,11 +319,32 @@
     nodeData.forEach(function (n) { nodeLookup[n.name] = n; });
   }
 
+  // ── Viewer tab switching ───────────────────────────────────────────────────
+  document.querySelectorAll(".ex-vtab").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".ex-vtab").forEach(function (b) {
+        b.classList.remove("active");
+        b.style.color = "var(--muted)";
+        b.style.borderBottomColor = "transparent";
+      });
+      document.querySelectorAll(".ex-vtab-content").forEach(function (c) {
+        c.classList.remove("active");
+        c.style.display = "none";
+      });
+      btn.classList.add("active");
+      btn.style.color = "var(--blue)";
+      btn.style.borderBottomColor = "var(--blue)";
+      var target = document.getElementById("vtab-" + btn.dataset.vtab);
+      if (target) { target.classList.add("active"); target.style.display = "flex"; }
+    });
+  });
+
   // ── Click handler (called by Mermaid click directives) ────────────────────
   window.explicarNodeClick = function (mermaidId) {
     var origName = idMap[mermaidId] || mermaidId;
     var node     = nodeLookup[origName] || { name: origName, type: "unknown" };
     showDetail(origName, node);
+    if (node.type === "script") showWikiPage(node.file || origName);
   };
 
   function showDetail(name, node) {
@@ -360,6 +393,33 @@
     });
 
     wrapEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function showWikiPage(fileKey) {
+    var wikiWrap = document.getElementById("ex-wiki-wrap");
+    var content  = wikiData[fileKey] || null;
+    if (!content) {
+      wikiWrap.innerHTML = '<p class="ex-hint">No wiki page for this file.' +
+        ' Run <code>explicar_wiki_build()</code> to generate one.</p>';
+    } else {
+      wikiWrap.innerHTML = '<div style="font-size:.82rem;line-height:1.6">' +
+        markdownToHtml(content) + '</div>';
+    }
+  }
+
+  function markdownToHtml(md) {
+    return md
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/```[\w]*\n([\s\S]*?)```/g, function (_, c) {
+        return "<pre style='background:var(--code);padding:.4rem;border-radius:3px;overflow-x:auto;font-size:.75rem'><code>" + c + "</code></pre>";
+      })
+      .replace(/`([^`]+)`/g, "<code style='background:var(--code);padding:.05rem .2rem;border-radius:2px'>$1</code>")
+      .replace(/^### (.+)$/gm, "<h3 style='font-size:.88rem;margin:.5rem 0 .2rem'>$1</h3>")
+      .replace(/^## (.+)$/gm,  "<h2 style='font-size:.95rem;margin:.7rem 0 .3rem'>$1</h2>")
+      .replace(/^# (.+)$/gm,   "<h2 style='font-size:.95rem;margin:.7rem 0 .3rem'>$1</h2>")
+      .replace(/^\- (.+)$/gm,  "<li style='margin:.1rem 0'>$1</li>")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\n\n/g, "<br><br>");
   }
 
   function esc(s) {

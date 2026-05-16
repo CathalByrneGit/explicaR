@@ -86,21 +86,103 @@ present. Requires `yaml` package for config file reading; falls back to
 hardcoded defaults otherwise.
 Keys: exclude_dirs, exclude_extensions, max_file_size_kb, default_languages, max_depth.
 
+### explicar_wiki_build
+```
+explicar_wiki_build(
+  project_dir = ".",
+  db_path     = NULL,            # default: .explicar/explicar.duckdb
+  llm_chat    = NULL,            # ellmer::Chat | NULL (auto Ollama) | FALSE (fallback)
+  model       = "llama3.2",
+  ollama_url  = "http://localhost:11434",
+  languages   = c("r", "python"),
+  force       = FALSE,
+  quiet       = FALSE
+) -> invisible(n_pages)
+```
+Generates one markdown wiki page per source file using an LLM.
+Stores results in the `wiki` DuckDB table. Change detection: files
+with unchanged mtime are skipped. Fallback: roxygen blocks + parse graph.
+
+### deep_research
+```
+deep_research(
+  chat,                  # ellmer::Chat with retrieval tool registered
+  question,              # research question
+  max_iterations = 5L
+) -> invisible(chat)
+```
+Multi-turn research loop. Plans, iterates (retrieving via ragnar tools),
+then terminates when response starts with "CONCLUSION:".
+
+### explicar_ingest
+```
+explicar_ingest(
+  project_dir = ".",
+  db_path     = NULL,
+  include     = c("wiki", "source", "readme", "vignettes"),
+  embed       = FALSE,
+  embed_model = "nomic-embed-text",
+  ollama_url  = "http://localhost:11434",
+  force       = FALSE,
+  quiet       = FALSE
+) -> invisible(n_chunks)
+```
+Ingests wiki pages + docs into the ragnar RAG store (same DuckDB file).
+Builds BM25 + optional VSS index. Requires ragnar package.
+
+### explicar_llms_txt
+```
+explicar_llms_txt(
+  project_dir = ".",
+  output_file = NULL,    # default: <project_dir>/llms.txt
+  db_path     = NULL,
+  quiet       = FALSE
+) -> invisible(output_file)
+```
+Generates a machine-readable llms.txt for the analyzed project:
+stats, file list, function index, key objects, wiki summaries, Mermaid graph.
+
+### view_explicar_db
+```
+view_explicar_db(
+  project_dir = ".",
+  db_path     = NULL,
+  llm_chat    = NULL,   # ellmer::Chat | NULL (search only)
+  top_k       = 10L,
+  port        = 8080L,
+  host        = "127.0.0.1",
+  open        = TRUE
+) -> invisible(server)
+```
+Tier-3 server (requires httpuv). Endpoints: GET /, POST /chat,
+POST /search, GET /graph.json, GET /wiki.json. Blocks until Ctrl+C.
+ragnar retrieval auto-wired to llm_chat when store exists.
+
 ### explicar
 ```
 explicar(
-  project_dir = ".",
-  output_file = file.path(project_dir, "explicar_viewer.html"),
-  title       = "explicaR — <project>",
-  snapshots   = NULL,
-  enrich      = FALSE,
-  llm_model   = "qwen2.5-coder:3b",
-  direction   = "TD",
-  open        = TRUE
+  project_dir  = ".",
+  output_file  = NULL,
+  output_dir   = NULL,
+  title        = "explicaR — <project>",
+  pkg_name     = NULL,
+  languages    = "r",
+  snapshots    = NULL,
+  llm          = FALSE,
+  llm_chat     = NULL,
+  enrich       = FALSE,
+  llm_model    = "qwen2.5-coder:3b",
+  embed        = NULL,
+  embed_model  = "nomic-embed-text",
+  ingest       = TRUE,
+  direction    = "TD",
+  open         = TRUE,
+  db_extensions = FALSE
 ) -> invisible(output_file)
 ```
-Main entry point. Orchestrates: parse → targets-mode detection →
-shape attachment → optional LLM enrichment → generate_viewer.
+Main entry point. Orchestrates: parse → targets detection → shape
+attachment → optional LLM wiki build → ragnar ingest → generate_viewer.
+New params: languages, llm, llm_chat, embed, ingest, output_dir, pkg_name.
 
 ### attach_shapes
 ```
