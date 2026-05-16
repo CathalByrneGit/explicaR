@@ -15,8 +15,15 @@
 #'
 #' @param project_dir Project directory. Default `"."`.
 #' @param db_path Path to the store. Defaults to `.explicar/explicar.duckdb`.
+#' @param wiki_dir Directory containing `.md` wiki files written by
+#'   [explicar_wiki_build()] (and editable by the user).
+#'   Default `"<project_dir>/explicar/wiki"`.
 #' @param include Sources to ingest. Any subset of
-#'   `c("wiki", "source", "readme", "vignettes")`.
+#'   `c("wiki_files", "wiki", "source", "readme", "vignettes")`.
+#'   `"wiki_files"` (the default) reads the editable `.md` files from
+#'   `wiki_dir` directly and syncs their content back to the DuckDB `wiki`
+#'   table; it is the preferred path after editing wiki pages.
+#'   `"wiki"` is the legacy path that reads from the DuckDB table only.
 #' @param embed Generate vector embeddings (requires Ollama). Default `FALSE`.
 #' @param embed_model Ollama embedding model.
 #' @param ollama_url Ollama API base URL.
@@ -28,16 +35,23 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Build wiki first, then ingest everything
-#' explicar_wiki_build("path/to/project")
-#' explicar_ingest("path/to/project")
+#' # Full pipeline: parse → wiki → site + index
+#' pr <- explicar_parse(".")
+#' explicar_wiki_build(".", llm_chat = ellmer::chat_anthropic())
+#' explicar_site_build(pr)          # HTML site from wiki/*.md
+#' explicar_ingest(".")             # ragnar index from wiki/*.md
+#'
+#' # After editing wiki/*.md files — rebuild site + re-index (no LLM needed)
+#' explicar_site_build(pr)
+#' explicar_ingest(".", force = TRUE)
 #'
 #' # With vector embeddings for semantic search (Ollama required)
-#' explicar_ingest("path/to/project", embed = TRUE)
+#' explicar_ingest(".", embed = TRUE)
 #' }
 explicar_ingest <- function(project_dir = ".",
                              db_path    = NULL,
-                             include    = c("wiki", "source", "readme", "vignettes"),
+                             wiki_dir   = NULL,
+                             include    = c("wiki_files", "source", "readme", "vignettes"),
                              embed      = FALSE,
                              embed_model = "nomic-embed-text",
                              ollama_url  = "http://localhost:11434",
@@ -52,6 +66,7 @@ explicar_ingest <- function(project_dir = ".",
 
   project_dir <- normalizePath(project_dir, mustWork = TRUE)
   db_path     <- db_path %||% .explicar_db_path(project_dir)
+  wiki_dir    <- wiki_dir %||% file.path(project_dir, "explicar", "wiki")
 
   if (!dir.exists(dirname(db_path))) dir.create(dirname(db_path), recursive = TRUE)
 
@@ -67,6 +82,13 @@ explicar_ingest <- function(project_dir = ".",
 
   n_total <- 0L
 
+  # Primary path: read wiki .md files directly (editable source of truth)
+  if ("wiki_files" %in% include) {
+    n <- .ingest_wiki_files(store, wiki_dir, db_path, force = force, quiet = quiet)
+    n_total <- n_total + n
+  }
+
+  # Legacy path: read wiki content from the DuckDB wiki table
   if ("wiki" %in% include) {
     n <- .ingest_wiki(store, db_path, force = force, quiet = quiet)
     n_total <- n_total + n
@@ -99,6 +121,94 @@ explicar_ingest <- function(project_dir = ".",
 
 
 # ── Per-source ingest helpers ──────────────────────────────────────────────────
+
+# Read wiki .md files from disk, sync changed ones back to the DuckDB wiki
+# table, and insert chunks into the ragnar store.  Uses file mtime to skip
+# unchanged files when force = FALSE.
+.ingest_wiki_files <- function(store, wiki_dir, db_path, force, quiet) {
+  if (!dir.exists(wiki_dir)) {
+    if (!quiet) message("  wiki_dir not found: ", wiki_dir,
+                        " — run explicar_wiki_build() first")
+    return(0L)
+  }
+
+  md_files <- list.files(wiki_dir, pattern = "\\.md$", full.names = TRUE)
+  if (!length(md_files)) return(0L)
+
+  # Open a side connection to read/write the wiki table for mtime tracking
+  wiki_con <- tryCatch({
+    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = FALSE)
+    .ensure_wiki_table(con)
+    con
+  }, error = function(e) NULL)
+  on.exit(if (!is.null(wiki_con))
+            tryCatch(DBI::dbDisconnect(wiki_con, shutdown = TRUE), error = function(e) invisible()),
+          add = TRUE)
+
+  n <- 0L
+
+  for (md_path in md_files) {
+    file_mtime <- as.numeric(file.info(md_path)$mtime)
+    source_id  <- paste0("wiki-file:", md_path)
+
+    # Skip if not forced and mtime matches what we stored
+    if (!force && !is.null(wiki_con)) {
+      stored <- tryCatch(
+        DBI::dbGetQuery(wiki_con,
+          sprintf("SELECT last_modified FROM wiki WHERE file = '%s'",
+                  gsub("'", "''", md_path))),
+        error = function(e) data.frame()
+      )
+      if (nrow(stored) > 0L && abs(stored$last_modified[[1L]] - file_mtime) < 0.01) {
+        next
+      }
+    }
+
+    content <- tryCatch(
+      paste(readLines(md_path, warn = FALSE), collapse = "\n"),
+      error = function(e) NULL
+    )
+    if (is.null(content) || !nzchar(trimws(content))) next
+
+    # Remove stale ragnar chunks for this file before re-inserting
+    tryCatch(
+      DBI::dbExecute(store@con,
+        sprintf("DELETE FROM chunks WHERE source = '%s'",
+                gsub("'", "''", source_id))),
+      error = function(e) invisible()
+    )
+
+    page_title <- tools::file_path_sans_ext(basename(md_path))
+    chunks     <- .chunk_markdown(content, page_title)
+
+    for (chunk in chunks) {
+      .safe_store_insert(store, source_id, chunk$content, chunk$context,
+                         origin = paste0("file://", md_path))
+      n <- n + 1L
+    }
+
+    # Sync mtime back to wiki table so next call can skip unchanged files
+    if (!is.null(wiki_con)) {
+      tryCatch({
+        DBI::dbExecute(wiki_con,
+          sprintf("DELETE FROM wiki WHERE file = '%s'", gsub("'", "''", md_path)))
+        DBI::dbWriteTable(wiki_con, "wiki",
+          data.frame(file = md_path, model = "file",
+                     generated_at  = as.numeric(Sys.time()),
+                     last_modified = file_mtime,
+                     content       = content,
+                     stringsAsFactors = FALSE),
+          append = TRUE)
+      }, error = function(e) invisible())
+    }
+
+    if (!quiet) message("  indexed: ", basename(md_path))
+  }
+
+  if (!quiet && n > 0L)
+    message("  wiki files: ", length(md_files), " files → ", n, " chunks")
+  n
+}
 
 .ingest_wiki <- function(store, db_path, force, quiet) {
   # Open separate DBI connection to read wiki table (ragnar holds the store conn)
