@@ -340,3 +340,51 @@ test_that("explicar_index_generate_wiki is idempotent without force", {
   )
   expect_true(any(grepl("already generated", msg)))
 })
+
+# ---------------------------------------------------------------------------
+# functions table tests
+# ---------------------------------------------------------------------------
+
+make_project_with_fn <- function() {
+  dir <- tempfile("explicar_fn_project_")
+  dir.create(dir)
+  writeLines(c(
+    "#' Add two numbers",
+    "#' @param x First number",
+    "#' @param y Second number",
+    "#' @return Sum",
+    "add <- function(x, y) x + y",
+    "",
+    "#' Multiply two numbers",
+    "#' @param a First factor",
+    "#' @param b Second factor",
+    "#' @return Product",
+    "multiply <- function(a, b) a * b"
+  ), file.path(dir, "math.R"))
+  dir
+}
+
+test_that("explicar_index_build populates functions table for function-type nodes", {
+  proj <- make_project_with_fn()
+  on.exit(unlink(proj, recursive = TRUE))
+
+  path <- explicar_index_build(proj, quiet = TRUE)
+  con  <- DBI::dbConnect(duckdb::duckdb(), dbdir = path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+
+  fns <- DBI::dbGetQuery(con, "SELECT * FROM functions")
+  expect_true(nrow(fns) > 0L)
+})
+
+test_that("explicar_index_build functions table has correct columns", {
+  proj <- make_project_with_fn()
+  on.exit(unlink(proj, recursive = TRUE))
+
+  path <- explicar_index_build(proj, quiet = TRUE)
+  con  <- DBI::dbConnect(duckdb::duckdb(), dbdir = path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+
+  fns <- DBI::dbGetQuery(con, "SELECT * FROM functions LIMIT 1")
+  expected_cols <- c("name", "file", "line", "language", "exported", "description")
+  expect_true(all(expected_cols %in% names(fns)))
+})
