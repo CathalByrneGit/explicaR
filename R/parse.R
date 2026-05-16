@@ -140,8 +140,8 @@ explicar_parse <- function(project_dir = ".",
 
 .extract_roxygen <- function(script) {
   if (!requireNamespace("roxygen2", quietly = TRUE)) return(tibble::tibble())
-  tryCatch({
-    blocks <- suppressWarnings(roxygen2::parse_file(script))
+  suppressWarnings(tryCatch({
+    blocks <- roxygen2::parse_file(script)
     if (!length(blocks)) return(tibble::tibble())
 
     purrr::map_dfr(blocks, function(blk) {
@@ -156,7 +156,7 @@ explicar_parse <- function(project_dir = ".",
       )
       tibble::tibble(fn_name = fn_name, title = title, description = desc)
     })
-  }, error = function(e) tibble::tibble())
+  }, error = function(e) tibble::tibble()))
 }
 
 

@@ -452,7 +452,7 @@ import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@latest
 
   // ── Initialise Mermaid ──────────────────────────────────────────────────────
   mermaid.initialize({ startOnLoad: true, securityLevel: "loose", theme: "default",
-    flowchart: { curve: "basis", padding: 20 } });
+    maxTextSize: 500000, flowchart: { curve: "basis", padding: 20 } });
 
   // ── Initialise DuckDB-WASM ──────────────────────────────────────────────────
   var db = null;
