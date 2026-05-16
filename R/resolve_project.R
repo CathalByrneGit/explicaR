@@ -15,6 +15,11 @@
 #' @param project_dir Local path or remote URL (e.g.
 #'   `"https://github.com/tidyverse/dplyr"` or
 #'   `"github.com/tidyverse/dplyr"`).
+#' @param git_pat Personal access token for private repositories.  When `NULL`
+#'   (default), reads `GITHUB_PAT` / `GITLAB_TOKEN` / `BITBUCKET_TOKEN` from
+#'   the environment automatically.
+#' @param update Logical; run `git pull` when a cached clone already exists.
+#'   Set `FALSE` to use the cached version without fetching.  Default `TRUE`.
 #'
 #' @return Absolute path to the local project directory.
 #' @export
@@ -24,10 +29,17 @@
 #' # Remote — cloned/pulled automatically
 #' path <- resolve_project("https://github.com/tidyverse/dplyr")
 #'
+#' # Skip the pull if you know the cache is fresh
+#' path <- resolve_project("https://github.com/tidyverse/dplyr", update = FALSE)
+#'
+#' # Private repo with explicit PAT
+#' path <- resolve_project("https://github.com/org/private-repo",
+#'                         git_pat = Sys.getenv("GITHUB_PAT"))
+#'
 #' # Local — returned as-is
 #' path <- resolve_project("path/to/project")
 #' }
-resolve_project <- function(project_dir) {
+resolve_project <- function(project_dir, git_pat = NULL, update = TRUE) {
   if (!.is_remote_url(project_dir)) {
     return(normalizePath(project_dir, mustWork = TRUE))
   }
@@ -36,11 +48,13 @@ resolve_project <- function(project_dir) {
   cache_path <- .clone_cache_path(parsed)
 
   if (dir.exists(cache_path)) {
-    message("explicaR: pulling latest changes for ", parsed$repo, "…")
-    .git_pull(cache_path)
+    if (isTRUE(update)) {
+      message("explicaR: pulling latest changes for ", parsed$repo, "…")
+      .git_pull(cache_path, git_pat = git_pat, host = parsed$host)
+    }
   } else {
     message("explicaR: cloning ", parsed$url, "…")
-    .git_clone(parsed$url, cache_path, parsed$host)
+    .git_clone(parsed$url, cache_path, parsed$host, git_pat = git_pat)
   }
 
   normalizePath(cache_path, mustWork = TRUE)
@@ -77,15 +91,14 @@ resolve_project <- function(project_dir) {
             parsed$host, parsed$owner, parsed$repo)
 }
 
-.git_clone <- function(url, dest_path, host) {
+.git_clone <- function(url, dest_path, host, git_pat = NULL) {
   dir.create(dirname(dest_path), recursive = TRUE, showWarnings = FALSE)
 
   if (requireNamespace("git2r", quietly = TRUE)) {
-    cred <- .git_cred(host)
+    cred <- .git_cred(host, git_pat)
     tryCatch(
       git2r::clone(url, dest_path, credentials = cred),
       error = function(e) {
-        # Fall back to system git on auth errors / missing cred
         message("  git2r clone failed: ", conditionMessage(e), " — trying system git")
         .git_system_clone(url, dest_path)
       }
@@ -95,11 +108,12 @@ resolve_project <- function(project_dir) {
   }
 }
 
-.git_pull <- function(repo_path) {
+.git_pull <- function(repo_path, git_pat = NULL, host = NULL) {
   if (requireNamespace("git2r", quietly = TRUE)) {
     tryCatch({
       repo <- git2r::repository(repo_path)
-      git2r::pull(repo)
+      cred <- if (!is.null(host)) .git_cred(host, git_pat) else NULL
+      git2r::pull(repo, credentials = cred)
     }, error = function(e) {
       message("  git2r pull failed: ", conditionMessage(e), " — trying system git")
       .git_system_pull(repo_path)
@@ -109,15 +123,19 @@ resolve_project <- function(project_dir) {
   }
 }
 
-.git_cred <- function(host) {
-  token_env <- switch(
-    host,
-    "github.com"    = Sys.getenv("GITHUB_PAT",    unset = NA),
-    "gitlab.com"    = Sys.getenv("GITLAB_TOKEN",   unset = NA),
-    "bitbucket.org" = Sys.getenv("BITBUCKET_TOKEN",unset = NA),
-    NA
-  )
-  if (is.na(token_env) || !nzchar(token_env)) return(NULL)
+.git_cred <- function(host, explicit_pat = NULL) {
+  token <- if (!is.null(explicit_pat) && nzchar(explicit_pat)) {
+    explicit_pat
+  } else {
+    switch(
+      host,
+      "github.com"    = Sys.getenv("GITHUB_PAT",    unset = ""),
+      "gitlab.com"    = Sys.getenv("GITLAB_TOKEN",   unset = ""),
+      "bitbucket.org" = Sys.getenv("BITBUCKET_TOKEN",unset = ""),
+      ""
+    )
+  }
+  if (!nzchar(token)) return(NULL)
   tryCatch(git2r::cred_token(), error = function(e) NULL)
 }
 

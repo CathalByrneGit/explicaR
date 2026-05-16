@@ -1,6 +1,6 @@
 Package: explicaR
 Title: An R DeepWiki — Browse, Search and Chat with Any Codebase
-Version: 0.1.0
+Version: 0.5.0
 Authors@R:
     person("Cathal", "Byrne", role = c("aut", "cre"),
            email = "cathal470@gmail.com")
@@ -30,6 +30,7 @@ Suggests:
     httr2,
     treesitter,
     treesitter.r,
+    treesitter.python,
     git2r,
     ragnar,
     ellmer,
@@ -42,8 +43,7 @@ Suggests:
     DBI,
     yaml,
     httpuv,
-    ellmer,
-    git2r
+    withr
 Config/testthat/edition: 3
 URL: https://github.com/CathalByrneGit/explicaR
 BugReports: https://github.com/CathalByrneGit/explicaR/issues

@@ -100,6 +100,7 @@ explicar_index_build <- function(project_dir = ".",
   .replace_edges(con, parse_result$edges)
   .insert_verbs(con, verbs)
   .update_mtimes(con, stale)
+  .upsert_functions(con, nodes)   # populate spec's `functions` table
 
   if (embed) {
     if (!requireNamespace("httr2", quietly = TRUE)) {
@@ -395,6 +396,7 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
   quoted <- paste0("'", gsub("'", "''", files), "'", collapse = ", ")
   DBI::dbExecute(con, paste0("DELETE FROM nodes       WHERE file IN (", quoted, ")"))
   DBI::dbExecute(con, paste0("DELETE FROM verbs       WHERE file IN (", quoted, ")"))
+  DBI::dbExecute(con, paste0("DELETE FROM functions   WHERE file IN (", quoted, ")"))
   DBI::dbExecute(con, paste0("DELETE FROM file_mtimes WHERE file IN (", quoted, ")"))
   invisible()
 }
@@ -450,6 +452,33 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
   quoted <- paste0("'", gsub("'", "''", files), "'", collapse = ", ")
   DBI::dbExecute(con, paste0("DELETE FROM file_mtimes WHERE file IN (", quoted, ")"))
   DBI::dbWriteTable(con, "file_mtimes", df, append = TRUE)
+}
+
+# Populate the spec's `functions` table from function-type nodes so it is
+# available to MCP query_graph and analytics SQL.
+.upsert_functions <- function(con, nodes) {
+  fns <- dplyr::filter(nodes, .data$type == "function")
+  if (nrow(fns) == 0L) return(invisible())
+
+  # Remove existing entries for these files before re-inserting
+  files_quoted <- unique(na.omit(fns$file))
+  if (length(files_quoted)) {
+    q <- paste0("'", gsub("'", "''", files_quoted), "'", collapse = ", ")
+    DBI::dbExecute(con, paste0("DELETE FROM functions WHERE file IN (", q, ")"))
+  }
+
+  df <- data.frame(
+    name        = as.character(fns$name),
+    file        = as.character(fns$file %||% NA_character_),
+    line        = as.integer(fns$line  %||% NA_integer_),
+    language    = "r",
+    exported    = FALSE,
+    signature   = NA_character_,
+    description = as.character(fns$label %||% NA_character_),
+    stringsAsFactors = FALSE
+  )
+  DBI::dbWriteTable(con, "functions", df, append = TRUE)
+  invisible()
 }
 
 # ---------------------------------------------------------------------------

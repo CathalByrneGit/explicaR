@@ -163,7 +163,8 @@ serve_explicar_mcp <- function(project_dir = ".", db_path = NULL) {
         "Run a SELECT SQL query against the code graph.",
         "Available tables: nodes (name, type, file, line, label, shape_info),",
         "edges (from_node, to_node, type), wiki (file, model, content),",
-        "verbs (file, line, fn_name, input_var, output_var, pkg).",
+        "verbs (file, line, fn_name, input_var, output_var, pkg),",
+        "functions (name, file, line, language, exported, signature, description).",
         "Only SELECT statements are permitted."
       ),
       inputSchema = list(
