@@ -3,7 +3,9 @@
 #' Main entry point.  Parses the project, optionally builds LLM wiki pages and
 #' ingests them into the ragnar store, then writes a self-contained HTML viewer.
 #'
-#' @param project_dir Path to the project (local directory or future: remote URL).
+#' @param project_dir Path to the project — a local directory **or** a remote
+#'   URL (GitHub, GitLab, Bitbucket).  Remote repos are cloned to
+#'   `~/.explicar/repos/<host>/<owner>/<repo>/` and pulled on subsequent calls.
 #'   Alias `project_path` also accepted.
 #' @param output_file Output HTML path.  Defaults to
 #'   `<project_dir>/explicar_viewer.html`.
@@ -12,6 +14,11 @@
 #' @param title Page title / `pkg_name`. Defaults to
 #'   `"explicaR — <project name>"`.
 #' @param pkg_name Alias for `title`.
+#' @param git_pat Personal access token for private repositories.  When `NULL`
+#'   (default), reads `GITHUB_PAT` / `GITLAB_TOKEN` / `BITBUCKET_TOKEN` from
+#'   the environment.
+#' @param update Logical; run `git pull` if a cached clone already exists.
+#'   Set `FALSE` to use the cached version without fetching.  Default `TRUE`.
 #' @param languages Languages to parse: `c("r")` (default), `c("r","python")`.
 #' @param snapshots Optional named list of intermediate dataframes (from
 #'   [with_pipeline_trace()] or [explicar_targets()]).
@@ -50,6 +57,13 @@
 #'
 #' # Mixed R + Python project
 #' explicar("path/to/project", languages = c("r", "python"))
+#'
+#' # Remote public repo
+#' explicar("https://github.com/tidyverse/dplyr", llm = TRUE)
+#'
+#' # Remote private repo (PAT from environment or explicit)
+#' explicar("https://github.com/org/private-repo",
+#'          git_pat = Sys.getenv("GITHUB_PAT"))
 #' }
 explicar <- function(project_dir  = ".",
                      output_file  = NULL,
@@ -68,6 +82,8 @@ explicar <- function(project_dir  = ".",
                      direction    = "TD",
                      open         = TRUE,
                      db_extensions = FALSE,
+                     git_pat      = NULL,
+                     update       = TRUE,
                      # Legacy aliases
                      project_path = NULL) {
 
@@ -77,7 +93,7 @@ explicar <- function(project_dir  = ".",
 
   # Resolve remote URLs → local clone
   project_dir <- if (.is_remote_url(project_dir)) {
-    resolve_project(project_dir)
+    resolve_project(project_dir, git_pat = git_pat, update = update)
   } else {
     normalizePath(project_dir, mustWork = TRUE)
   }
