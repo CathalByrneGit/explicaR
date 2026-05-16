@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{PAGE_TITLE}} — {{SITE_TITLE}}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue:     #4A90D9;
+      --dark:     #1a1a2e;
+      --bg:       #f8f9fa;
+      --border:   #dee2e6;
+      --muted:    #6c757d;
+      --code-bg:  #1e2030;
+      --sidebar-w: 220px;
+      --nav-h:     44px;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; color: var(--dark); background: var(--bg); }
+
+    /* ── Nav ── */
+    .site-nav {
+      background: var(--dark); color: #fff;
+      padding: 0 1rem; height: var(--nav-h);
+      display: flex; align-items: center; gap: .75rem;
+      border-bottom: 3px solid var(--blue);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .nav-brand { color: #fff; text-decoration: none; font-weight: 700; font-size: .9rem; white-space: nowrap; flex: 0 0 auto; }
+    .nav-brand:hover { color: var(--blue); }
+    .nav-search { position: relative; flex: 1; max-width: 380px; }
+    .nav-search input {
+      width: 100%; padding: .3rem .7rem; border-radius: 4px;
+      border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08);
+      color: #fff; font-size: .82rem; outline: none;
+    }
+    .nav-search input::placeholder { color: rgba(255,255,255,.4); }
+    .nav-search input:focus { background: rgba(255,255,255,.15); border-color: var(--blue); }
+    .search-drop {
+      display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+      background: #fff; border: 1px solid var(--border); border-radius: 6px;
+      box-shadow: 0 6px 20px rgba(0,0,0,.18); max-height: 340px; overflow-y: auto; z-index: 200;
+    }
+    .search-drop.open { display: block; }
+    .search-hit { display: block; padding: .5rem .75rem; text-decoration: none; color: var(--dark); border-bottom: 1px solid var(--border); }
+    .search-hit:last-child { border-bottom: none; }
+    .search-hit:hover { background: var(--bg); }
+    .search-hit-title { font-weight: 600; font-size: .83rem; color: var(--blue); font-family: monospace; }
+    .search-hit-excerpt { font-size: .74rem; color: var(--muted); margin-top: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Layout ── */
+    .layout { display: flex; min-height: calc(100vh - var(--nav-h)); }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+      background: #fff; border-right: 1px solid var(--border);
+      overflow-y: auto; padding: .6rem 0;
+      position: sticky; top: var(--nav-h); height: calc(100vh - var(--nav-h));
+    }
+    .sb-label { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: .5rem .85rem .15rem; }
+    .sb-link { display: block; padding: .28rem .85rem; font-size: .79rem; color: var(--dark); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: monospace; }
+    .sb-link:hover { background: var(--bg); color: var(--blue); }
+    .sb-link.active { background: #EBF3FC; color: var(--blue); font-weight: 600; border-left: 3px solid var(--blue); padding-left: calc(.85rem - 3px); }
+
+    /* ── Content ── */
+    .content { flex: 1 1 0; max-width: 860px; padding: 1.75rem 2rem 3rem; }
+
+    /* ── Page header ── */
+    .page-header { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+    .page-header h1 { font-size: 1.35rem; font-weight: 700; font-family: "SF Mono", "Fira Code", monospace; margin-bottom: .55rem; }
+    .provenance { font-size: .76rem; color: var(--muted); display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: .55rem; }
+    .provenance a { color: var(--blue); text-decoration: none; }
+    .provenance a:hover { text-decoration: underline; }
+    .prov-sep { color: var(--border); }
+    .graph-links { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .graph-link { display: inline-flex; align-items: center; gap: .2rem; padding: .16rem .45rem; border: 1px solid var(--border); border-radius: 3px; text-decoration: none; color: var(--dark); background: #fff; font-size: .75rem; font-family: monospace; }
+    .graph-link:hover { border-color: var(--blue); color: var(--blue); }
+    .gl-up::before { content: "← "; color: var(--muted); font-family: sans-serif; }
+    .gl-down::after { content: " →"; color: var(--muted); font-family: sans-serif; }
+    .gl-label { font-size: .65rem; color: var(--muted); font-family: sans-serif; margin-left: .15rem; }
+
+    /* ── Wiki content ── */
+    .wiki-content { line-height: 1.65; }
+    .wiki-content h1 { font-size: 1.2rem; font-weight: 700; margin: 1.6rem 0 .5rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border); }
+    .wiki-content h2 { font-size: 1rem; font-weight: 700; margin: 1.4rem 0 .4rem; padding-bottom: .25rem; border-bottom: 1px solid var(--border); }
+    .wiki-content h3 { font-size: .9rem; font-weight: 700; margin: 1rem 0 .3rem; }
+    .wiki-content p { font-size: .875rem; margin-bottom: .75rem; }
+    .wiki-content ul, .wiki-content ol { padding-left: 1.4rem; margin-bottom: .75rem; }
+    .wiki-content li { font-size: .875rem; line-height: 1.55; margin-bottom: .2rem; }
+    .wiki-content code { font-family: "SF Mono", "Fira Code", monospace; font-size: .8em; background: #f1f3f5; padding: .1em .3em; border-radius: 3px; }
+    .wiki-content pre { background: var(--code-bg); color: #cdd6f4; padding: .9rem 1.1rem; border-radius: 6px; overflow-x: auto; margin-bottom: 1.1rem; font-size: .79rem; line-height: 1.55; }
+    .wiki-content pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+    .wiki-content strong { font-weight: 700; }
+    .wiki-content em { font-style: italic; }
+    .wiki-content a { color: var(--blue); text-decoration: none; }
+    .wiki-content a:hover { text-decoration: underline; }
+    .wiki-content blockquote { border-left: 3px solid var(--border); padding-left: .85rem; color: var(--muted); margin-bottom: .75rem; }
+    .wiki-content hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+
+    /* ── Mermaid ── */
+    .mermaid { margin: 1rem 0; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: .75rem; overflow-x: auto; text-align: center; }
+
+    @media (max-width: 700px) {
+      .sidebar { display: none; }
+      .content { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="nav-brand" href="index.html">{{SITE_TITLE}}</a>
+  <div class="nav-search">
+    <input type="search" id="search-input" placeholder="Search docs…" autocomplete="off">
+    <div class="search-drop" id="search-drop"></div>
+  </div>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sb-label">Scripts</div>
+    {{SIDEBAR_HTML}}
+  </aside>
+  <main class="content">
+    <div class="page-header">
+      <h1>{{PAGE_TITLE}}</h1>
+      <div class="provenance">{{PROVENANCE_HTML}}</div>
+      <div class="graph-links">{{GRAPH_LINKS_HTML}}</div>
+    </div>
+    <article class="wiki-content">
+      {{CONTENT_HTML}}
+    </article>
+  </main>
+</div>
+
+<script type="application/json" id="search-data">{{SEARCH_DATA_JSON}}</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  mermaid.initialize({ startOnLoad: true, theme: "default", securityLevel: "loose", flowchart: { curve: "basis" } });
+
+  var data  = JSON.parse(document.getElementById("search-data").textContent || "[]");
+  var input = document.getElementById("search-input");
+  var drop  = document.getElementById("search-drop");
+
+  input.addEventListener("input", function () {
+    var q = input.value.trim().toLowerCase();
+    drop.innerHTML = "";
+    if (q.length < 2) { drop.classList.remove("open"); return; }
+    var hits = data.filter(function (d) {
+      return d.title.toLowerCase().indexOf(q) !== -1 ||
+             d.text.toLowerCase().indexOf(q)  !== -1;
+    }).slice(0, 8);
+    if (!hits.length) { drop.classList.remove("open"); return; }
+    hits.forEach(function (h) {
+      var a = document.createElement("a");
+      a.className = "search-hit"; a.href = h.url;
+      a.innerHTML = '<div class="search-hit-title">' + esc(h.title) + '</div>' +
+                    '<div class="search-hit-excerpt">' + esc(h.excerpt) + '</div>';
+      drop.appendChild(a);
+    });
+    drop.classList.add("open");
+  });
+  document.addEventListener("click", function (e) {
+    if (!drop.contains(e.target) && e.target !== input) drop.classList.remove("open");
+  });
+  function esc(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+})();
+</script>
+</body>
+</html>

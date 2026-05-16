@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{SITE_TITLE}} — docs</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue:   #4A90D9;
+      --dark:   #1a1a2e;
+      --bg:     #f8f9fa;
+      --border: #dee2e6;
+      --muted:  #6c757d;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; color: var(--dark); background: var(--bg); }
+
+    /* ── Nav ── */
+    .site-nav {
+      background: var(--dark); color: #fff;
+      padding: 0 1.25rem; height: 44px;
+      display: flex; align-items: center; gap: .75rem;
+      border-bottom: 3px solid var(--blue);
+    }
+    .nav-brand { color: #fff; text-decoration: none; font-weight: 700; font-size: .9rem; }
+
+    /* ── Hero ── */
+    .hero {
+      background: var(--dark); color: #fff;
+      padding: 2.5rem 1.5rem 2rem; border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .hero h1 { font-size: 1.7rem; font-weight: 700; margin-bottom: .35rem; }
+    .hero-sub { font-size: .88rem; color: #9ab; margin-bottom: 1.25rem; }
+    .hero-search { position: relative; max-width: 500px; }
+    .hero-search input {
+      width: 100%; padding: .55rem 1rem; border-radius: 6px;
+      border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.1);
+      color: #fff; font-size: .92rem; outline: none;
+    }
+    .hero-search input::placeholder { color: rgba(255,255,255,.45); }
+    .hero-search input:focus { background: rgba(255,255,255,.18); border-color: var(--blue); }
+    .hero-results-count { font-size: .75rem; color: #9ab; margin-top: .5rem; min-height: 1.2em; }
+
+    /* ── Cards ── */
+    .cards-wrap { padding: 1.5rem; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: .85rem; }
+    .card {
+      background: #fff; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; text-decoration: none; color: var(--dark);
+      display: flex; flex-direction: column; transition: box-shadow .15s, border-color .15s;
+    }
+    .card:hover { box-shadow: 0 4px 18px rgba(0,0,0,.1); border-color: var(--blue); }
+    .card.hidden { display: none; }
+    .card-title { font-family: "SF Mono", "Fira Code", monospace; font-weight: 700; color: var(--blue); font-size: .9rem; margin-bottom: .45rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-excerpt { font-size: .77rem; color: var(--muted); line-height: 1.55; flex: 1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .card-tags { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .55rem; }
+    .card-tag { font-size: .67rem; padding: .1rem .35rem; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--muted); font-family: monospace; }
+
+    .no-results { padding: 2rem 1.5rem; color: var(--muted); font-size: .88rem; }
+
+    @media (max-width: 600px) { .cards { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="nav-brand" href="index.html">{{SITE_TITLE}}</a>
+</nav>
+
+<div class="hero">
+  <h1>{{SITE_TITLE}}</h1>
+  <p class="hero-sub">{{SCRIPT_COUNT}} documented scripts</p>
+  <div class="hero-search">
+    <input type="search" id="hero-search" placeholder="Search scripts, functions, descriptions…" autocomplete="off">
+    <div class="hero-results-count" id="results-count"></div>
+  </div>
+</div>
+
+<div class="cards-wrap">
+  <div class="cards" id="cards">
+    {{CARDS_HTML}}
+  </div>
+  <div class="no-results" id="no-results" style="display:none">No scripts match your search.</div>
+</div>
+
+<script type="application/json" id="search-data">{{SEARCH_DATA_JSON}}</script>
+<script>
+(function () {
+  "use strict";
+  var data    = JSON.parse(document.getElementById("search-data").textContent || "[]");
+  var input   = document.getElementById("hero-search");
+  var cards   = document.querySelectorAll(".card");
+  var counter = document.getElementById("results-count");
+  var noRes   = document.getElementById("no-results");
+
+  input.addEventListener("input", function () {
+    var q = input.value.trim().toLowerCase();
+    var visible = 0;
+    cards.forEach(function (card) {
+      var text = (card.dataset.search || "").toLowerCase();
+      var show = !q || q.length < 2 || text.indexOf(q) !== -1;
+      card.classList.toggle("hidden", !show);
+      if (show) visible++;
+    });
+    noRes.style.display  = (visible === 0) ? "block" : "none";
+    counter.textContent  = q.length >= 2
+      ? (visible + " of " + cards.length + " scripts")
+      : "";
+  });
+})();
+</script>
+</body>
+</html>
