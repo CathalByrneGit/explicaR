@@ -152,8 +152,31 @@ explicar_index_retrieve <- function(query,
   .require_duckdb()
 
   project_dir <- normalizePath(project_dir, mustWork = TRUE)
-  idx_path    <- .index_path(project_dir)
 
+  # v0.5: try ragnar on unified explicar.duckdb first (uses VSS when available,
+  # BM25 otherwise); .parse_node_text() is defined in embed.R
+  explicar_db <- .explicar_db_path(project_dir)
+  if (file.exists(explicar_db) && requireNamespace("ragnar", quietly = TRUE)) {
+    result <- tryCatch({
+      store <- ragnar::ragnar_store_connect(explicar_db, read_only = TRUE)
+      res   <- ragnar::ragnar_retrieve(store, query, top_k = as.integer(top_k) * 2L)
+      tryCatch(ragnar::ragnar_store_disconnect(store), error = function(e) invisible())
+
+      node_rows <- res[!is.na(res$source) & res$source == "nodes:code-graph", , drop = FALSE]
+      if (nrow(node_rows) == 0L) return(NULL)
+
+      parsed <- .parse_node_text(node_rows$text)
+      if (!is.null(type)) {
+        parsed <- parsed[!is.na(parsed$type) & parsed$type %in% type, , drop = FALSE]
+      }
+      head(parsed, as.integer(top_k))
+    }, error = function(e) NULL)
+
+    if (!is.null(result) && nrow(result) > 0L) return(result)
+  }
+
+  # Legacy path: index.duckdb with optional httr2 vector search
+  idx_path <- .index_path(project_dir)
   if (!file.exists(idx_path)) {
     stop("No index found at '", idx_path, "'. Run explicar_index_build() first.")
   }
@@ -161,7 +184,6 @@ explicar_index_retrieve <- function(query,
   con <- DBI::dbConnect(duckdb::duckdb(), dbdir = idx_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
-  # Try vector search if embeddings are present
   if (.has_embeddings(con) &&
       requireNamespace("httr2", quietly = TRUE) &&
       ollama_available(embed_model, ollama_url)) {

@@ -147,6 +147,20 @@ explicar <- function(project_dir  = ".",
         ),
         error = function(e) message("explicaR: ingest failed: ", conditionMessage(e))
       )
+
+      # v0.5: embed code-graph nodes for semantic retrieval
+      if (do_embed) {
+        tryCatch(
+          explicar_embed(
+            project_dir = project_dir,
+            model       = embed_model,
+            include     = "nodes",
+            force       = FALSE,
+            quiet       = FALSE
+          ),
+          error = function(e) message("explicaR: node embed failed: ", conditionMessage(e))
+        )
+      }
     }
   }
 
