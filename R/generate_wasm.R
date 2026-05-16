@@ -74,8 +74,25 @@ generate_wasm_viewer <- function(parse_result,
   html <- gsub("{{STATS}}",         .html_esc(stats),                    html, fixed = TRUE)
   html <- gsub("{{GENERATED_AT}}",  format(Sys.time(), "%Y-%m-%d %H:%M"), html, fixed = TRUE)
   html <- gsub("{{MERMAID_GRAPH}}", graph_text,                           html, fixed = TRUE)
+  verb_data <- if (!is.null(parse_result$verbs) && nrow(parse_result$verbs) > 0L) {
+    lapply(seq_len(nrow(parse_result$verbs)), function(i) {
+      v <- parse_result$verbs[i, ]
+      list(
+        file       = as.character(v$file       %||% ""),
+        line       = as.integer( v$line        %||% 0L),
+        fn_name    = as.character(v$fn_name    %||% ""),
+        input_var  = as.character(v$input_var  %||% ""),
+        output_var = as.character(v$output_var %||% ""),
+        pkg        = as.character(v$pkg        %||% "")
+      )
+    })
+  } else {
+    list()
+  }
+
   html <- gsub("{{NODE_DATA_JSON}}", jsonlite::toJSON(node_data, auto_unbox = TRUE), html, fixed = TRUE)
   html <- gsub("{{EDGE_DATA_JSON}}", jsonlite::toJSON(edge_data, auto_unbox = TRUE), html, fixed = TRUE)
+  html <- gsub("{{VERB_DATA_JSON}}", jsonlite::toJSON(verb_data, auto_unbox = TRUE), html, fixed = TRUE)
   html <- gsub("{{ID_MAP_JSON}}",    jsonlite::toJSON(id_map,    auto_unbox = TRUE), html, fixed = TRUE)
 
   writeLines(html, output_file)

@@ -246,18 +246,6 @@ attach_shapes(parse_result, shapes) -> parse_result
 Annotates variable nodes with "nrow × ncol" badges.
 `shapes` is a named list of data frames (name matches node name).
 
-### explicar_animate
-```
-explicar_animate(
-  parse_result,
-  snapshots = NULL,
-  max_rows  = 50L,
-  verbs     = NULL
-) -> named list
-```
-Builds before/after HTML widgets for each verb. Each element: list(descriptor, widget, json).
-Uses real `snapshots` if supplied, otherwise generates illustrative data.
-
 ## targets integration
 
 ```
@@ -270,18 +258,6 @@ targets_manifest(project_dir, store) -> tibble
 ```
 `targets_network()` reads `tar_network()` topology and `tar_manifest()`
 descriptions. Works when `_targets/` cache exists. No re-execution required.
-
-## Tracing (non-targets projects)
-
-```
-with_pipeline_trace(
-  script,
-  envir           = new.env(parent = parent.frame()),
-  max_snapshot_rows = 500L
-) -> list(snapshots, trace_log, envir)
-```
-Instruments dplyr/tidyr verbs in `script`, capturing before/after snapshots.
-`trace_log`: tibble(fn, input_var, output_var, line, elapsed_ms).
 
 ## LLM enrichment (local Ollama)
 
@@ -358,18 +334,6 @@ col_type_summary(df) -> "int(3) dbl(2) chr(1)"
 shape_description(df) -> "980 × 8 | dbl(5) int(2) chr(1)"
 ```
 
-## Verb descriptors
-
-```
-verb_descriptor(verb_record, snapshots) -> list | NULL
-verb_filter(data_before, args_text, output_var, data_after) -> descriptor
-verb_pivot_longer(data_before, cols_text, names_to, values_to, ...) -> descriptor
-verb_pivot_wider(data_before, names_from, values_from, ...) -> descriptor
-```
-`verb_descriptor` dispatches on `verb_record$fn_name`. Returns NULL for
-unrecognised verbs. Descriptor fields: verb, pkg, description,
-data_before, data_after, pipeline_expr, output_var.
-
 ## Data structures
 
 ### parse_result (returned by explicar_parse)
@@ -407,13 +371,12 @@ R/
   parse_python.R       — Python parser (treesitter.python or regex)
   graph.R              — Mermaid flowchart generator
   generate_viewer.R    — HTML template filler
-  animate.R            — before/after verb widgets
-  verbs.R              — verb descriptor factories
   shapes.R             — shape badge utilities
   targets.R            — targets cache + network integration
-  trace.R              — instrumented source()
   enrich.R             — Ollama LLM enrichment
   report.R             — explicar() orchestrator
+  site.R               — explicar_site_build() multi-page static site
+  provenance.R         — provenance tracking helpers
   index.R              — DuckDB code-graph index
   index-docs.R         — local doc extraction + wiki generation
   index-ragnar.R       — ragnar BM25+VSS doc store

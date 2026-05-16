@@ -90,11 +90,10 @@ explicar()
 | `index-docs.R` | `explicar_index_build_docs/generate_wiki()` — doc extraction |
 | `index-ragnar.R` | `explicar_ragnar_build/doc_retrieve/register_retrieve()` |
 | `report.R` | `explicar()` — main entry point orchestrator |
+| `site.R` | `explicar_site_build()` — multi-page static site output |
+| `provenance.R` | provenance tracking helpers |
 | `enrich.R` | `enrich_node_label/parse_result()` — Ollama label enrichment |
 | `targets.R` | targets cache + network integration |
-| `trace.R` | `with_pipeline_trace()` — instrumented `source()` |
-| `animate.R` | `explicar_animate()` — before/after verb widgets |
-| `verbs.R` | verb descriptor factories |
 | `shapes.R` | shape badge utilities |
 
 ---
@@ -204,11 +203,12 @@ This format is reversible by `.parse_node_text()` in `embed.R`.
 
 ### `inst/templates/viewer.html` (Tier 1)
 `{{TITLE}}`, `{{STATS}}`, `{{GENERATED_AT}}`, `{{MERMAID_GRAPH}}`,
-`{{VERB_DATA_JSON}}`, `{{NODE_DATA_JSON}}`, `{{ID_MAP_JSON}}`, `{{WIKI_DATA_JSON}}`
+`{{NODE_DATA_JSON}}`, `{{ID_MAP_JSON}}`, `{{WIKI_DATA_JSON}}`
 
 ### `inst/templates/wasm.html` (Tier 2)
 `{{TITLE}}`, `{{STATS}}`, `{{GENERATED_AT}}`, `{{MERMAID_GRAPH}}`,
 `{{NODE_DATA_JSON}}`, `{{EDGE_DATA_JSON}}`, `{{VERB_DATA_JSON}}`, `{{ID_MAP_JSON}}`
+(`{{VERB_DATA_JSON}}` populated with raw verb rows from `parse_result$verbs`)
 
 ### `inst/templates/analytics.html` (Tier 3)
 `{{TITLE}}`, `{{STATS}}`, `{{GENERATED_AT}}`, `{{MERMAID_GRAPH}}`,
