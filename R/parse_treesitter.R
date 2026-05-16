@@ -1,11 +1,6 @@
 # ── Tier-2 parser: treesitter R package ──────────────────────────────────────
 # Uses the `treesitter` + `treesitter.r` packages for concrete syntax tree
-# parsing.  Falls through gracefully when unavailable.
-
-.parse_treesitter_available <- function() {
-  requireNamespace("treesitter",   quietly = TRUE) &&
-  requireNamespace("treesitter.r", quietly = TRUE)
-}
+# parsing.  Falls back to getParseData() on error.
 
 #' Parse scripts using tree-sitter
 #' @noRd

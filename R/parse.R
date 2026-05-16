@@ -105,10 +105,8 @@ explicar_parse <- function(project_dir = ".",
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 .auto_dispatch <- function(scripts) {
-  if (.parse_treesitter_available()) {
-    result <- tryCatch(.parse_treesitter(scripts), error = function(e) NULL)
-    if (!is.null(result)) return(result)
-  }
+  result <- tryCatch(.parse_treesitter(scripts), error = function(e) NULL)
+  if (!is.null(result)) return(result)
   .parse_r_fallback(scripts)
 }
 
