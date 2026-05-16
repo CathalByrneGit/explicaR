@@ -1,0 +1,228 @@
+---
+title: "LLM Wiki Pages and Deep Research"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{LLM Wiki Pages and Deep Research}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+explicaR can generate a markdown wiki page for every source file in your
+project using any LLM supported by the
+[ellmer](https://ellmer.tidyverse.org) package.  Pages are stored in a DuckDB
+table and ingested into a ragnar RAG store for keyword and vector search.
+
+## LLM provider support
+
+All wiki functions accept any `ellmer::Chat` object.  Pick whichever provider
+suits your workflow:
+
+| Provider | Call | Notes |
+|---|---|---|
+| **Ollama** (local) | `chat_ollama("llama3.2")` | Free, private, no key |
+| **OpenAI** | `chat_openai(model = "gpt-4o-mini")` | Reads `OPENAI_API_KEY` |
+| **Anthropic** | `chat_anthropic(model = "claude-haiku-4-5")` | Reads `ANTHROPIC_API_KEY` |
+| **Google Gemini** | `chat_google_gemini()` | Reads `GOOGLE_API_KEY` |
+| **Groq** | `chat_groq()` | Reads `GROQ_API_KEY` |
+| **AWS Bedrock** | `chat_aws_bedrock()` | Uses AWS credentials |
+| **llama.cpp / vLLM** | `chat_openai_compatible(base_url = "http://...")` | Any OpenAI-compatible endpoint |
+
+## Generating wiki pages
+
+```{r wiki-build}
+library(explicaR)
+library(ellmer)
+
+# Ollama — completely local, no cost
+explicar_wiki_build(
+  "path/to/project",
+  llm_chat = chat_ollama(model = "llama3.2")
+)
+
+# OpenAI
+explicar_wiki_build(
+  "path/to/project",
+  llm_chat = chat_openai(model = "gpt-4o-mini")
+)
+
+# Anthropic
+explicar_wiki_build(
+  "path/to/project",
+  llm_chat = chat_anthropic(model = "claude-haiku-4-5")
+)
+```
+
+Each page contains four sections:
+
+1. **Overview** — 2–3 sentences on what the file does
+2. **Key Functions / Objects** — bullet list with one-line descriptions
+3. **How It Works** — implementation approach and key patterns
+4. **Usage Example** — short code block showing typical use
+
+A per-file Mermaid dependency diagram is prepended when the file has
+connections in the graph.
+
+### No LLM available?
+
+Pass `llm_chat = FALSE` for the roxygen fallback — pages are built from
+`#'` comments and the parse graph, with no network calls:
+
+```{r fallback}
+explicar_wiki_build("path/to/project", llm_chat = FALSE)
+```
+
+## Change detection
+
+`explicar_wiki_build()` compares each file's `mtime` against the value stored
+in the `wiki` table.  Unchanged files are skipped automatically:
+
+```{r change-detection}
+# First run — generates all pages
+explicar_wiki_build("path/to/project", llm_chat = chat_ollama("llama3.2"))
+
+# Second run — skips files whose mtime hasn't changed
+explicar_wiki_build("path/to/project", llm_chat = chat_ollama("llama3.2"))
+#> skip (unchanged): foo.R
+#> skip (unchanged): bar.R
+#> Wiki complete: 0 generated, 2 unchanged
+
+# Force regeneration of everything
+explicar_wiki_build("path/to/project",
+                    llm_chat = chat_ollama("llama3.2"),
+                    force    = TRUE)
+```
+
+## Where pages are stored
+
+Wiki pages live in the `wiki` table of `.explicar/explicar.duckdb`:
+
+```sql
+SELECT file, model, generated_at, length(content) AS chars
+FROM wiki
+ORDER BY file
+```
+
+You can query this directly with DBI / duckdb:
+
+```{r query-wiki}
+library(DBI)
+library(duckdb)
+
+con <- dbConnect(duckdb(), ".explicar/explicar.duckdb", read_only = TRUE)
+wiki <- dbGetQuery(con, "SELECT file, model, content FROM wiki")
+dbDisconnect(con, shutdown = TRUE)
+
+cat(wiki$content[[1]])  # print the first page
+```
+
+## Ingesting into the RAG store
+
+After building wiki pages, ingest them (plus README, roxygen docs, vignettes)
+into the ragnar BM25 store so they are searchable:
+
+```{r ingest}
+explicar_ingest("path/to/project")
+```
+
+Then search with keyword matching:
+
+```{r search}
+explicar_index_retrieve("functions that filter rows", top_k = 5)
+```
+
+## Vector embeddings (semantic search)
+
+`explicar_embed()` converts every code-graph node to a natural-language
+description and embeds it in the ragnar VSS store using Ollama.  This enables
+semantic search — finding relevant code even when exact keywords don't match.
+
+```{r embed}
+# Requires Ollama with an embedding model
+explicar_embed("path/to/project", model = "nomic-embed-text")
+
+# Semantic search — finds conceptually similar code
+explicar_semantic_retrieve("function that removes duplicate rows")
+explicar_semantic_retrieve("data cleaning pipeline")
+
+# Force BM25 keyword search instead of VSS
+explicar_semantic_retrieve("filter_rows", bm25_only = TRUE)
+```
+
+The node text format is:
+```
+function: `clean_data()` — Removes NA rows and duplicates [R/clean.R:14]
+```
+
+## Deep research
+
+`deep_research()` runs a multi-turn investigation loop using an ellmer chat
+with a ragnar retrieval tool registered on it.  The LLM plans its research,
+iterates (retrieving relevant chunks on each turn), and terminates when it
+writes a response starting with `CONCLUSION:`.
+
+```{r deep-research}
+library(ellmer)
+library(ragnar)
+
+# Connect to the store built by explicar_ingest() / explicar_embed()
+store <- ragnar_store_connect(".explicar/explicar.duckdb")
+
+# Build the chat with retrieval wired in
+chat <- chat_ollama(model = "llama3.2")
+ragnar_register_tool_retrieve(chat, store)
+
+# Run up to 5 research iterations
+deep_research(chat, "How does the parse dispatch layer work?",
+              max_iterations = 5L)
+
+# Print the final conclusion
+cat(chat$last_turn()$text)
+```
+
+The loop:
+1. **Plan turn** — LLM lists what it needs to investigate
+2. **Iterate** (up to `max_iterations - 1` turns) — retrieves chunks,
+   synthesises findings
+3. **Terminates** when the response begins with `CONCLUSION:`
+
+## Full pipeline
+
+```{r full-pipeline}
+library(explicaR)
+library(ellmer)
+
+chat <- chat_ollama(model = "llama3.2")
+
+# 1. Build the code graph index
+explicar_index_build("path/to/project")
+
+# 2. Generate wiki pages (change-detection: skips unchanged files)
+explicar_wiki_build("path/to/project", llm_chat = chat)
+
+# 3. Ingest into the ragnar BM25 store
+explicar_ingest("path/to/project")
+
+# 4. Embed code-graph nodes for semantic search (requires Ollama)
+explicar_embed("path/to/project")
+
+# 5. Open the Tier 1 viewer with wiki pages included
+explicar("path/to/project", llm_chat = chat, open = TRUE)
+
+# 6. Or launch the Tier 3 live server with chat
+view_explicar_db("path/to/project", llm_chat = chat)
+```
+
+## Generating llms.txt
+
+`explicar_llms_txt()` produces a machine-readable `llms.txt` — a concise
+project summary (stats, file list, function index, Mermaid DAG) that any LLM
+can ingest in one shot:
+
+```{r llms-txt}
+explicar_llms_txt("path/to/project")
+# → writes llms.txt in the project root
+```

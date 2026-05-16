@@ -1,0 +1,163 @@
+---
+title: "Getting Started with explicaR"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with explicaR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+explicaR is an **R DeepWiki**: point it at any local R or Python project (or a
+GitHub URL) and get a self-contained, browsable, searchable wiki — one page per
+source file, an interactive Mermaid dependency graph, a DuckDB code index, and
+an optional live chat server backed by a ragnar RAG store.
+
+```{r install, eval=FALSE}
+# Install from GitHub
+remotes::install_github("CathalByrneGit/explicaR")
+```
+
+## One-line quick start
+
+```{r quickstart}
+library(explicaR)
+
+# Analyse a local project and open the viewer in the browser
+explicar("path/to/your/project")
+```
+
+This single call:
+
+1. Parses every `.R` (and optionally `.py`) file into a code graph
+2. Generates an interactive Mermaid dependency diagram
+3. Writes a self-contained `explicar_viewer.html` and opens it
+
+No LLM is required for this step — everything runs offline.
+
+## Parsing and the graph
+
+The two core primitives are available independently:
+
+```{r parse}
+# Parse the project into a code graph
+pr <- explicar_parse("path/to/project")
+
+# What you get back:
+pr$nodes   # tibble: name, type, file, line, label, shape_info
+pr$edges   # tibble: from, to, type
+pr$verbs   # tibble: file, line, fn_name, input_var, output_var, pkg
+
+# Get the Mermaid diagram text (paste into GitHub, Obsidian, Quarto…)
+cat(explicar_graph(pr))
+cat(explicar_graph(pr, direction = "LR"))
+```
+
+### Node types
+
+| Shape | Colour | Type | Meaning |
+|-------|--------|------|---------|
+| Rectangle `[…]` | Blue | `script` | `.R` / `.py` source file |
+| Rounded `(…)` | Green | `variable` | Named object (LHS of assignment) |
+| Hexagon `{{…}}` | Orange | `function` | Named function definition |
+| Cylinder `[(…)]` | Purple | `source` | Data file or Python import |
+
+### Edge types
+
+`produces` · `consumes` · `calls` · `reads` · `writes` · `depends`
+
+## Three viewer tiers
+
+### Tier 1 — Self-contained HTML (default)
+
+Zero runtime dependencies.  Works offline; only the Mermaid CDN request
+requires internet.
+
+```{r tier1}
+generate_viewer(pr, output_file = "my_wiki.html")
+```
+
+### Tier 2 — WASM SQL browser
+
+Embeds DuckDB-WASM so you can run SQL against the code graph directly in the
+browser — no server needed.
+
+```{r tier2}
+generate_wasm_viewer(pr, output_file = "my_wiki_wasm.html")
+```
+
+Example queries you can run in the browser:
+
+```sql
+-- All function definitions
+SELECT name, file, line FROM nodes WHERE type = 'function' ORDER BY name
+
+-- What calls what
+SELECT from_node, to_node FROM edges WHERE type = 'calls'
+
+-- Pipeline verbs in file order
+SELECT fn_name, file, line FROM verbs ORDER BY file, line
+```
+
+### Tier 3 — Live server with chat
+
+Starts an HTTP server at `http://127.0.0.1:8080` with a full analytics
+dashboard: the Mermaid graph, wiki pages, keyword search, and an LLM chat
+panel.
+
+```{r tier3}
+library(ellmer)
+
+view_explicar_db(
+  project_dir = "path/to/project",
+  llm_chat    = chat_ollama(model = "llama3.2"),  # any ellmer provider
+  port        = 8080
+)
+# → opens http://127.0.0.1:8080
+```
+
+## Mixed R and Python projects
+
+```{r python}
+pr <- explicar_parse("path/to/project", languages = c("r", "python"))
+explicar("path/to/project", languages = c("r", "python"))
+```
+
+## Remote repositories
+
+```{r remote}
+# Clone from GitHub, parse, and open the viewer
+explicar("https://github.com/tidyverse/dplyr")
+
+# Private repos — set GITHUB_PAT or pass explicitly
+Sys.setenv(GITHUB_PAT = "ghp_...")
+explicar("https://github.com/myorg/private-repo")
+
+# Use the cached clone without pulling again
+explicar("https://github.com/tidyverse/dplyr", update = FALSE)
+```
+
+Clones land in `~/.explicar/repos/<host>/<owner>/<repo>/`.  Subsequent calls
+run `git pull` unless `update = FALSE`.
+
+## Building the persistent code index
+
+For search and MCP integration you need the DuckDB index:
+
+```{r index}
+# Build (incremental — only re-parses changed files)
+explicar_index_build("path/to/project")
+
+# Keyword search
+explicar_index_retrieve("functions that filter rows", top_k = 5)
+```
+
+The index lands in `.explicar/explicar.duckdb` inside the project directory.
+
+## What's next?
+
+- **LLM wiki pages and deep research** — see `vignette("llm-wiki")`
+- **MCP integration with Claude Desktop** — see `vignette("mcp-claude")`

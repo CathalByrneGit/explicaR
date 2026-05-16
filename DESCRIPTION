@@ -44,6 +44,7 @@ Suggests:
     yaml,
     httpuv,
     withr
+VignetteBuilder: knitr
 Config/testthat/edition: 3
 URL: https://github.com/CathalByrneGit/explicaR
 BugReports: https://github.com/CathalByrneGit/explicaR/issues

@@ -1,0 +1,195 @@
+---
+title: "MCP Integration with Claude Desktop and Claude Code"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{MCP Integration with Claude Desktop and Claude Code}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+explicaR includes a stdio [Model Context Protocol](https://modelcontextprotocol.io)
+(MCP) server that wires your project's code graph and wiki pages directly into
+Claude Desktop or Claude Code.  Once connected, Claude can answer questions
+about your codebase without you copying and pasting code.
+
+## How it works
+
+`serve_explicar_mcp()` reads the `.explicar/explicar.duckdb` built by
+`explicar_index_build()` and exposes four tools over JSON-RPC 2.0 stdio:
+
+| Tool | What it does |
+|---|---|
+| `search_code` | Hybrid BM25 / keyword search over nodes, wiki pages, and docs |
+| `query_graph` | Run `SELECT` SQL against `nodes`, `edges`, `verbs`, `functions`, `wiki` |
+| `get_wiki` | Retrieve the LLM-generated wiki page for a specific file |
+| `list_files` | List all source files with type counts and function summaries |
+
+## Step 1: build the index
+
+```{r build}
+library(explicaR)
+
+# Parse the project and build the DuckDB index
+explicar_index_build("path/to/project")
+
+# Optionally add wiki pages (richer results for get_wiki / search_code)
+library(ellmer)
+explicar_wiki_build("path/to/project", llm_chat = chat_ollama("llama3.2"))
+explicar_ingest("path/to/project")
+```
+
+## Step 2: start the MCP server
+
+```{r serve}
+serve_explicar_mcp("path/to/project")
+# Blocks on stdin — leave this running while Claude is connected.
+```
+
+## Step 3: add to claude_desktop_config.json
+
+Add the following to your Claude Desktop configuration file.
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "my-project": {
+      "command": "Rscript",
+      "args": ["-e", "explicaR::serve_explicar_mcp('path/to/project')"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop after editing the config.  The server name
+(`"my-project"`) will appear in Claude's tool list.
+
+### Multiple projects
+
+Register each project under a distinct key:
+
+```json
+{
+  "mcpServers": {
+    "dplyr": {
+      "command": "Rscript",
+      "args": ["-e", "explicaR::serve_explicar_mcp('~/projects/dplyr')"]
+    },
+    "my-app": {
+      "command": "Rscript",
+      "args": ["-e", "explicaR::serve_explicar_mcp('~/projects/my-app')"]
+    }
+  }
+}
+```
+
+## Using the tools from Claude
+
+Once connected, Claude can use the tools transparently when you ask questions.
+Example prompts that trigger tool use:
+
+- *"What functions are defined in `clean.R`?"* → `get_wiki` or `search_code`
+- *"Which files call `filter_rows()`?"* → `query_graph`
+- *"How does the parse dispatch layer work?"* → `search_code` + `get_wiki`
+- *"List all exported functions and their files."* → `query_graph`
+
+### query_graph: SQL examples
+
+Claude can run any read-only `SELECT` query.  Non-`SELECT` statements are
+rejected.  The queryable tables are:
+
+```sql
+-- All function definitions
+SELECT name, file, line FROM nodes WHERE type = 'function' ORDER BY name
+
+-- Call graph: who calls what
+SELECT from_node, to_node FROM edges WHERE type = 'calls'
+
+-- Files that produce a specific variable
+SELECT from_node, to_node FROM edges
+WHERE type = 'produces' AND to_node = 'clean_df'
+
+-- Functions with descriptions (populated by explicar_index_build)
+SELECT name, file, line, description FROM functions
+
+-- All wiki pages and their sizes
+SELECT file, model, length(content) AS chars FROM wiki ORDER BY chars DESC
+```
+
+## Claude Code integration
+
+For Claude Code (the CLI), add the server via the MCP settings:
+
+```bash
+# Add to project-level MCP config
+claude mcp add my-project -- Rscript -e "explicaR::serve_explicar_mcp('.')"
+```
+
+Or edit `.claude/settings.json` manually:
+
+```json
+{
+  "mcpServers": {
+    "my-project": {
+      "command": "Rscript",
+      "args": ["-e", "explicaR::serve_explicar_mcp('.')"]
+    }
+  }
+}
+```
+
+## Tier 3 live server: in-browser chat
+
+For an interactive browser experience instead of the CLI integration, use
+the Tier 3 server.  It provides the same search and chat capabilities in a
+dashboard UI:
+
+```{r tier3}
+library(ellmer)
+library(explicaR)
+
+view_explicar_db(
+  project_dir = "path/to/project",
+  llm_chat    = chat_ollama(model = "llama3.2"),
+  port        = 8080
+)
+# → http://127.0.0.1:8080
+```
+
+The dashboard includes:
+
+- **Graph tab** — interactive Mermaid dependency diagram with clickable nodes
+- **Wiki tab** — LLM-generated pages per file
+- **Search tab** — BM25 keyword search over the ragnar store
+- **Chat tab** — RAG-powered Q&A (requires `llm_chat`)
+
+HTTP endpoints exposed by the server:
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Dashboard HTML |
+| `POST` | `/chat` | Single-turn chat |
+| `GET` | `/chat/stream` | Streaming chat (SSE) |
+| `POST` | `/search` | Keyword search |
+| `GET` | `/graph.json` | Nodes + edges as JSON |
+| `GET` | `/wiki.json` | All wiki pages as JSON |
+| `GET` | `/health` | Health check |
+
+## Privacy
+
+| Operation | Network calls |
+|---|---|
+| `explicar_index_build()` | None |
+| `serve_explicar_mcp()` | None — reads local DB only |
+| `view_explicar_db()` — no `llm_chat` | None |
+| `view_explicar_db(llm_chat = chat_ollama(...))` | Local Ollama only |
+| `view_explicar_db(llm_chat = chat_openai(...))` | OpenAI API |
+
+The MCP server itself never makes network calls.  It only reads from
+`.explicar/explicar.duckdb`.
