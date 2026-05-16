@@ -7,7 +7,8 @@
 explicar_graph(
   parse_result,
   direction = c("TD", "LR", "BT", "RL"),
-  max_label = 40L
+  max_label = 40L,
+  level = c("files", "all")
 )
 }
 \arguments{
@@ -18,6 +19,10 @@ explicar_graph(
 
 \item{max_label}{Integer; truncate long node labels to this many characters.
 Default \code{40L}.}
+
+\item{level}{\code{"files"} (default) shows only script nodes with file-to-file
+data-flow edges — readable for any project size.  \code{"all"} shows every
+function, variable, and source node.}
 }
 \value{
 A single character string containing Mermaid flowchart syntax.
@@ -30,6 +35,7 @@ renderer (GitHub, Quarto, Obsidian, etc.).
 \examples{
 \dontrun{
 pr  <- explicar_parse("path/to/project")
-cat(explicar_graph(pr))
+cat(explicar_graph(pr))               # file-level (default)
+cat(explicar_graph(pr, level = "all")) # full graph
 }
 }

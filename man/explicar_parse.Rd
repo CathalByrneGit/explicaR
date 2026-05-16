@@ -7,7 +7,7 @@
 explicar_parse(
   project_dir = ".",
   pattern = NULL,
-  recursive = FALSE,
+  recursive = TRUE,
   backend = c("auto", "treesitter", "r"),
   languages = "r"
 )
