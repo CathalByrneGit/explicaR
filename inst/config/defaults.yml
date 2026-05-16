@@ -1,0 +1,31 @@
+# explicaR — default file-filter configuration
+#
+# Override per-project by placing .explicar/config.yml in your project root.
+# All settings here act as package-wide defaults when no project config exists.
+
+# Directories excluded from parsing and indexing
+exclude_dirs:
+  - .git
+  - .explicar
+  - renv
+  - packrat
+  - node_modules
+  - .Rproj.user
+  - _targets
+  - .venv
+  - __pycache__
+  - .tox
+
+# File extensions to skip (in addition to the language pattern filter)
+# Example: [".min.R", ".generated.R"]
+exclude_extensions: []
+
+# Files larger than this are skipped silently (kilobytes)
+max_file_size_kb: 500
+
+# Languages parsed by default when `languages` is not specified
+default_languages:
+  - r
+
+# Maximum depth when recursive = TRUE (NULL means unlimited)
+max_depth: ~

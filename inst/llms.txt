@@ -60,6 +60,32 @@ generate_viewer(
 Writes a self-contained HTML file embedding the Mermaid graph + verb
 before/after panels. Requires internet for Mermaid CDN rendering.
 
+### generate_wasm_viewer
+```
+generate_wasm_viewer(
+  parse_result,
+  title       = "explicaR — WASM Viewer",
+  output_file = "explicar_wasm.html",
+  direction   = "TD",
+  open        = TRUE,
+  quiet       = FALSE
+) -> invisible(output_file)
+```
+Tier-2 viewer. Same layout as generate_viewer but embeds DuckDB-WASM for
+interactive SQL queries over the code graph in-browser (no server needed).
+Tables available: nodes, edges, verbs. Requires internet for DuckDB-WASM
+and Mermaid CDN.
+
+### explicar_config
+```
+explicar_config(project_dir = ".") -> list
+```
+Returns active file-filter config. Merges package defaults
+(`inst/config/defaults.yml`) with per-project `.explicar/config.yml` if
+present. Requires `yaml` package for config file reading; falls back to
+hardcoded defaults otherwise.
+Keys: exclude_dirs, exclude_extensions, max_file_size_kb, default_languages, max_depth.
+
 ### explicar
 ```
 explicar(

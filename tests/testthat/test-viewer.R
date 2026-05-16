@@ -154,6 +154,102 @@ test_that("generate_viewer replaces all template placeholders", {
   expect_false(grepl("\\{\\{[A-Z_]+\\}\\}", html))
 })
 
+# ── generate_wasm_viewer ──────────────────────────────────────────────────────
+
+test_that("generate_wasm_viewer creates an HTML file", {
+  pr  <- minimal_parse_result()
+  out <- tempfile(fileext = ".html")
+  on.exit(unlink(out))
+
+  result <- generate_wasm_viewer(pr, output_file = out, open = FALSE, quiet = TRUE)
+
+  expect_true(file.exists(out))
+  expect_true(file.info(out)$size > 0L)
+})
+
+test_that("generate_wasm_viewer returns invisibly", {
+  pr  <- minimal_parse_result()
+  out <- tempfile(fileext = ".html")
+  on.exit(unlink(out))
+
+  ret <- withVisible(generate_wasm_viewer(pr, output_file = out, open = FALSE, quiet = TRUE))
+  expect_false(ret$visible)
+  expect_equal(ret$value, out)
+})
+
+test_that("generate_wasm_viewer replaces all template placeholders", {
+  pr  <- minimal_parse_result()
+  out <- tempfile(fileext = ".html")
+  on.exit(unlink(out))
+
+  generate_wasm_viewer(pr, output_file = out, open = FALSE, quiet = TRUE)
+
+  html <- paste(readLines(out, warn = FALSE), collapse = "\n")
+  expect_false(grepl("\\{\\{[A-Z_]+\\}\\}", html))
+})
+
+test_that("generate_wasm_viewer embeds node and edge JSON", {
+  pr  <- minimal_parse_result()
+  out <- tempfile(fileext = ".html")
+  on.exit(unlink(out))
+
+  generate_wasm_viewer(pr, output_file = out, open = FALSE, quiet = TRUE)
+
+  html <- paste(readLines(out, warn = FALSE), collapse = "\n")
+  expect_true(grepl("ex-node-data", html))
+  expect_true(grepl("ex-edge-data", html))
+  expect_true(grepl("raw_df", html))
+})
+
+test_that("generate_wasm_viewer contains DuckDB-WASM reference", {
+  pr  <- minimal_parse_result()
+  out <- tempfile(fileext = ".html")
+  on.exit(unlink(out))
+
+  generate_wasm_viewer(pr, output_file = out, open = FALSE, quiet = TRUE)
+
+  html <- paste(readLines(out, warn = FALSE), collapse = "\n")
+  expect_true(grepl("duckdb-wasm", html, ignore.case = TRUE))
+})
+
+test_that("generate_wasm_viewer respects direction argument", {
+  pr  <- minimal_parse_result()
+  out <- tempfile(fileext = ".html")
+  on.exit(unlink(out))
+
+  generate_wasm_viewer(pr, direction = "LR", output_file = out, open = FALSE, quiet = TRUE)
+
+  html <- paste(readLines(out, warn = FALSE), collapse = "\n")
+  expect_true(grepl("flowchart LR", html))
+})
+
+# ── explicar_config ────────────────────────────────────────────────────────────
+
+test_that("explicar_config returns a list with expected keys", {
+  cfg <- explicar_config()
+  expect_type(cfg, "list")
+  expect_true("exclude_dirs"       %in% names(cfg))
+  expect_true("exclude_extensions" %in% names(cfg))
+  expect_true("max_file_size_kb"   %in% names(cfg))
+  expect_true("default_languages"  %in% names(cfg))
+})
+
+test_that("explicar_config exclude_dirs includes .git", {
+  cfg <- explicar_config()
+  expect_true(".git" %in% cfg$exclude_dirs)
+})
+
+test_that("explicar_config project override is merged", {
+  tmp <- tempfile()
+  dir.create(file.path(tmp, ".explicar"), recursive = TRUE)
+  writeLines('exclude_dirs:\n  - my_custom_dir', file.path(tmp, ".explicar", "config.yml"))
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  skip_if_not_installed("yaml")
+  cfg <- explicar_config(project_dir = tmp)
+  expect_true("my_custom_dir" %in% cfg$exclude_dirs)
+})
+
 # ── Python parse support ───────────────────────────────────────────────────────
 
 test_that("explicar_parse with languages='python' parses .py files", {
