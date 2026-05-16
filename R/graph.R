@@ -9,6 +9,9 @@
 #'   `"BT"` (bottom-top), or `"RL"` (right-left).
 #' @param max_label Integer; truncate long node labels to this many characters.
 #'   Default `40L`.
+#' @param level `"files"` (default) shows only script nodes with file-to-file
+#'   data-flow edges — readable for any project size.  `"all"` shows every
+#'   function, variable, and source node.
 #'
 #' @return A single character string containing Mermaid flowchart syntax.
 #' @export
@@ -16,15 +19,38 @@
 #' @examples
 #' \dontrun{
 #' pr  <- explicar_parse("path/to/project")
-#' cat(explicar_graph(pr))
+#' cat(explicar_graph(pr))               # file-level (default)
+#' cat(explicar_graph(pr, level = "all")) # full graph
 #' }
 explicar_graph <- function(parse_result,
                            direction = c("TD", "LR", "BT", "RL"),
-                           max_label = 40L) {
+                           max_label = 40L,
+                           level     = c("files", "all")) {
   direction <- match.arg(direction)
+  level     <- match.arg(level)
 
   nodes <- parse_result$nodes
   edges <- parse_result$edges
+
+  # File-level view: collapse to script nodes with synthesised data-flow edges
+  if (level == "files") {
+    nodes <- dplyr::filter(nodes, .data$type == "script")
+    # Derive script→script edges via shared variables
+    producers <- edges[edges$type == "produces",  c("from", "to"), drop = FALSE]
+    consumers <- edges[edges$type == "consumes",  c("from", "to"), drop = FALSE]
+    shared    <- merge(producers, consumers, by.x = "to", by.y = "from")
+    if (nrow(shared) > 0L) {
+      s2s <- unique(data.frame(
+        from = shared$from.x, to = shared$to.y,
+        type = "feeds", stringsAsFactors = FALSE
+      ))
+      s2s <- s2s[s2s$from != s2s$to & s2s$from %in% nodes$name & s2s$to %in% nodes$name, ]
+    } else {
+      s2s <- data.frame(from=character(), to=character(), type=character(),
+                        stringsAsFactors=FALSE)
+    }
+    edges <- s2s
+  }
 
   if (nrow(nodes) == 0L) {
     return(paste0("flowchart ", direction, "\n  empty[No nodes found]"))
@@ -88,9 +114,9 @@ explicar_graph <- function(parse_result,
       depends  = "depends on",
       reads    = "reads",
       writes   = "writes",
+      feeds    = "feeds",
       edges$type[i]
     )
-    # Dashed arrow for "calls" edges to distinguish from data flow
     arrow <- if (edges$type[i] == "calls") "-.->" else "-->"
     lines <- c(lines,
       paste0("  ", from_mids[i], " ", arrow, "|", edge_label, "| ", to_mids[i])

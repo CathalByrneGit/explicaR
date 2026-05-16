@@ -38,7 +38,7 @@ test_that("explicar_graph includes all node names", {
     verbs = tibble::tibble()
   )
 
-  g <- explicar_graph(pr)
+  g <- explicar_graph(pr, level = "all")
   expect_true(grepl("a_R", g))
   expect_true(grepl("my_df", g))
 })
@@ -81,7 +81,7 @@ test_that("explicar_graph uses different shapes per node type", {
     edges = tibble::tibble(from = character(), to = character(), type = character()),
     verbs = tibble::tibble()
   )
-  g <- explicar_graph(pr)
+  g <- explicar_graph(pr, level = "all")
   # script → ["…"]
   expect_true(grepl('\\["', g))
   # variable → ("…")
@@ -114,7 +114,7 @@ test_that("explicar_graph calls are dashed arrows", {
     edges = tibble::tibble(from = "a.R", to = "fn", type = "calls"),
     verbs = tibble::tibble()
   )
-  g <- explicar_graph(pr)
+  g <- explicar_graph(pr, level = "all")
   # Calls edges use dashed arrows: -.->
   expect_true(grepl("-\\.->", g))
 })

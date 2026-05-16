@@ -192,36 +192,78 @@ deep_research <- function(chat, question, max_iterations = 5L) {
 }
 
 
+.wiki_graph_context <- function(script, script_name, parse_result) {
+  nodes <- parse_result$nodes
+  edges <- parse_result$edges
+
+  file_nodes <- nodes[!is.na(nodes$file) &
+                        (nodes$file == script | nodes$file == script_name), ]
+  fns  <- file_nodes$name[file_nodes$type == "function"]
+  vars <- file_nodes$name[file_nodes$type == "variable"]
+
+  calls_out <- edges[edges$from == script_name & edges$type == "calls", "to",
+                     drop = TRUE]
+  calls_out <- setdiff(calls_out, fns)
+
+  consumers  <- edges[edges$type == "consumes" & edges$to == script_name, "from",
+                      drop = TRUE]
+  upstream   <- unique(edges[edges$type == "produces" & edges$from != script_name &
+                               edges$to %in% consumers, "from", drop = TRUE])
+
+  produced   <- edges[edges$from == script_name & edges$type == "produces", "to",
+                      drop = TRUE]
+  downstream <- unique(setdiff(
+    edges[edges$type == "consumes" & edges$from %in% produced, "to", drop = TRUE],
+    script_name
+  ))
+
+  parts <- character(0L)
+  if (length(fns)        > 0L) parts <- c(parts, paste0("Defines: ",            paste(paste0(fns, "()"), collapse = ", ")))
+  if (length(vars)       > 0L) parts <- c(parts, paste0("Produces objects: ",   paste(vars, collapse = ", ")))
+  if (length(calls_out)  > 0L) parts <- c(parts, paste0("Calls: ",              paste(head(calls_out, 15L), collapse = ", ")))
+  if (length(upstream)   > 0L) parts <- c(parts, paste0("Receives data from: ", paste(upstream, collapse = ", ")))
+  if (length(downstream) > 0L) parts <- c(parts, paste0("Feeds data into: ",    paste(downstream, collapse = ", ")))
+
+  if (length(parts) == 0L) return("")
+  paste(parts, collapse = "\n")
+}
+
+
 # ── Page generation ────────────────────────────────────────────────────────────
 
 .wiki_generate_page <- function(script, script_name, parse_result, llm_chat) {
-  code <- paste(readLines(script, warn = FALSE), collapse = "\n")
-  if (nchar(code) > 5000L) code <- paste0(substr(code, 1L, 5000L), "\n... [truncated]")
-
-  lang <- if (grepl("\\.py$", script_name)) "Python" else "R"
+  code    <- paste(readLines(script, warn = FALSE), collapse = "\n")
+  if (nchar(code) > 6000L) code <- paste0(substr(code, 1L, 6000L), "\n... [truncated]")
+  lang    <- if (grepl("\\.py$", script_name)) "Python" else "R"
+  context <- .wiki_graph_context(script, script_name, parse_result)
 
   prompt <- paste0(
-    "You are documenting ", lang, " source code for a developer wiki.\n",
-    "Generate a concise markdown wiki page for `", script_name, "` ",
-    "with exactly these four sections:\n\n",
+    "You are writing a developer wiki page for `", script_name,
+    "` in a ", lang, " project.\n\n",
+    if (nzchar(context)) paste0(
+      "PROJECT GRAPH CONTEXT (how this file relates to the rest of the codebase):\n",
+      context, "\n\n"
+    ),
+    "Generate a markdown wiki page with these sections:\n\n",
     "## Overview\n",
-    "2-3 sentences: what this file does and its role in the project.\n\n",
-    "## Key Functions / Objects\n",
-    "Bullet list: - `name()` \u2014 one-line description per item.\n\n",
+    "3-4 sentences: what this file does, its role in the project, and the key ",
+    "design decision or pattern it embodies (e.g. singleton, factory, pure functions).\n\n",
+    "## Functions\n",
+    "For each exported or important function: `name(key_params)` on its own line, ",
+    "followed by 1-2 sentences on what it does, its parameters, and return value. ",
+    "Group related functions together.\n\n",
     "## How It Works\n",
-    "2-4 sentences on the implementation approach or key patterns.\n\n",
-    "## Usage Example\n",
-    "A short ", lang, " code block showing typical usage.\n\n",
-    "Rules: under 400 words total. Stick to facts visible in the code. ",
-    "Do not repeat the filename as a top-level heading.\n\n",
-    "FILE: ", script_name, "\n",
-    "LANGUAGE: ", lang, "\n\n",
-    "```", tolower(lang), "\n", code, "\n```"
+    "3-5 sentences on the implementation approach: what pattern is used and WHY, ",
+    "what the key data structures are, how errors are handled, any non-obvious behaviour.\n\n",
+    "## Usage\n",
+    "A realistic ", lang, " code example showing the main use case.\n\n",
+    "Rules: 500-700 words. Stick to facts visible in the code and graph context. ",
+    "Do not repeat the filename as a heading. Use backticks for all names.\n\n",
+    "SOURCE CODE:\n```", tolower(lang), "\n", code, "\n```"
   )
 
   result <- llm_chat$chat(prompt)
 
-  # Prepend per-file dependency diagram
   local_mermaid <- .wiki_local_mermaid(script_name, parse_result)
   if (nzchar(local_mermaid)) {
     result <- paste0(
@@ -232,6 +274,7 @@ deep_research <- function(chat, question, max_iterations = 5L) {
 
   result
 }
+
 
 .wiki_fallback_page <- function(script, script_name, parse_result) {
   lang <- if (grepl("\\.py$", script_name)) "Python" else "R"
