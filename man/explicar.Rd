@@ -11,10 +11,8 @@ explicar(
   title = NULL,
   pkg_name = NULL,
   languages = "r",
-  snapshots = NULL,
   llm = FALSE,
   llm_chat = NULL,
-  enrich = FALSE,
   llm_model = "qwen2.5-coder:3b",
   embed = NULL,
   embed_model = "nomic-embed-text",
@@ -46,21 +44,16 @@ directory when set).}
 
 \item{languages}{Languages to parse: \code{c("r")} (default), \code{c("r","python")}.}
 
-\item{snapshots}{Optional named list of intermediate dataframes.}
-
 \item{llm}{Logical; generate LLM wiki pages (requires ellmer + Ollama or
 an explicit \code{llm_chat}). Default \code{FALSE}.}
 
 \item{llm_chat}{An \code{ellmer::Chat} object.  When supplied and \code{llm = TRUE}
 (or when \code{llm_chat} is non-NULL), wiki pages are generated using it.}
 
-\item{enrich}{Logical; enrich undocumented function-node labels via Ollama
-(uses the lightweight httr2 path, not ellmer). Default \code{FALSE}.}
+\item{llm_model}{Ollama model name (used when \code{llm = TRUE} without an explicit \code{llm_chat}).}
 
-\item{llm_model}{Ollama model for \code{enrich = TRUE}.}
-
-\item{embed}{Logical or \code{NULL}; embed wiki chunks into the ragnar store.
-\code{NULL} (default) = embed only when Ollama is available.}
+\item{embed}{Logical; embed wiki chunks via \code{ragnar::embed_ollama()} (requires Ollama).
+Default \code{NULL} (no embeddings — BM25 only).}
 
 \item{embed_model}{Ollama embedding model.}
 

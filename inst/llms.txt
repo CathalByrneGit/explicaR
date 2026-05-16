@@ -249,34 +249,15 @@ targets_manifest(project_dir, store) -> tibble
 `targets_network()` reads `tar_network()` topology and `tar_manifest()`
 descriptions. Works when `_targets/` cache exists. No re-execution required.
 
-## LLM enrichment (local Ollama)
+## Deprecated wrappers — index.duckdb era (→ use explicar_ingest)
 
 ```
-enrich_node_label(fn_name_or_body, model, ollama_url, max_words, timeout_s) -> character
-enrich_parse_result(parse_result, model, ollama_url, quiet) -> parse_result
-ollama_available(model, ollama_url) -> logical
-ollama_models(ollama_url) -> character vector
+explicar_index_build(project_dir, ...) -> invisible(NULL)
+explicar_index_retrieve(query, project_dir, ...) -> tibble (0 rows)
+explicar_index_connect(project_dir, ...) -> invisible(NULL)
 ```
-Enriches undocumented function nodes with plain-English labels via a local
-Ollama instance. Priority: roxygen @title > inline comments > LLM.
-
-## DuckDB code-graph index
-
-```
-explicar_index_build(
-  project_dir, pattern = "*.R", recursive = TRUE,
-  embed = FALSE, embed_model, ollama_url, force = FALSE, quiet = FALSE
-) -> invisible(index_path)
-
-explicar_index_retrieve(
-  query, project_dir, top_k = 10L, type = NULL,
-  embed_model, ollama_url
-) -> tibble(name, type, file, line, label, shape_info)
-
-explicar_index_connect(project_dir, read_only = TRUE) -> DBI connection
-```
-Persistent index at `.explicar/index.duckdb`. Tables: nodes, edges, verbs,
-file_mtimes, docs, doc_embeddings. Only re-parses changed files.
+All emit `.Deprecated()` warnings. The separate `index.duckdb` store is
+superseded by the unified `explicar.duckdb` ragnar store.
 
 ## Deprecated wrappers (→ use explicar_ingest / explicar_wiki_build)
 
@@ -330,8 +311,6 @@ R/
   targets.R            — targets cache + network integration
   enrich.R             — Ollama LLM enrichment
   report.R             — explicar() orchestrator
-  site.R               — explicar_site_build() multi-page static site
-  provenance.R         — provenance tracking helpers
   index.R              — DuckDB code-graph index
   index-docs.R         — deprecated wrappers (→ explicar_ingest / explicar_wiki_build)
   index-ragnar.R       — ragnar BM25+VSS doc store + deprecated shims

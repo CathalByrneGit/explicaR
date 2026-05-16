@@ -72,7 +72,6 @@ explicar <- function(project_dir  = ".",
                      languages    = "r",
                      llm          = FALSE,
                      llm_chat     = NULL,
-                     enrich       = FALSE,
                      llm_model    = "qwen2.5-coder:3b",
                      embed        = NULL,
                      embed_model  = "nomic-embed-text",
@@ -119,10 +118,6 @@ explicar <- function(project_dir  = ".",
     parse_result <- explicar_parse(project_dir, languages = languages)
   }
 
-  if (enrich) {
-    parse_result <- .enrich_parse_result(parse_result, model = llm_model)
-  }
-
   # ── LLM wiki generation ────────────────────────────────────────────────────
   do_wiki <- isTRUE(llm) || !is.null(llm_chat)
   if (do_wiki) {
@@ -140,10 +135,7 @@ explicar <- function(project_dir  = ".",
     # ── Ragnar ingest ──────────────────────────────────────────────────────
     if (ingest && requireNamespace("ragnar", quietly = TRUE)) {
       message("explicaR: ingesting into ragnar store")
-      do_embed <- if (is.null(embed)) {
-        requireNamespace("httr2", quietly = TRUE) &&
-          ollama_available(embed_model, "http://localhost:11434")
-      } else isTRUE(embed)
+      do_embed <- isTRUE(embed)
 
       tryCatch(
         explicar_ingest(
@@ -199,7 +191,3 @@ explicar_report <- function(parse_result, ...) {
   explicar_graph(parse_result, ...)
 }
 
-#' @noRd
-.enrich_parse_result <- function(parse_result, model) {
-  enrich_parse_result(parse_result, model = model, quiet = FALSE)
-}

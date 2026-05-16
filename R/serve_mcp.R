@@ -46,8 +46,9 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Build the index first, then start the server
-#' explicar_index_build("path/to/project")
+#' # Build the wiki + ingest first, then start the server
+#' explicar_wiki_build("path/to/project")
+#' explicar_ingest("path/to/project")
 #' serve_explicar_mcp("path/to/project")
 #' }
 serve_explicar_mcp <- function(project_dir = ".", db_path = NULL) {
@@ -264,7 +265,7 @@ serve_explicar_mcp <- function(project_dir = ".", db_path = NULL) {
     stop("Only SELECT statements are permitted. Received: ", substr(sql, 1L, 60L))
   }
 
-  if (is.null(con)) stop("No database index found. Run explicar_index_build() first.")
+  if (is.null(con)) stop("No database index found. Run explicar_ingest() first.")
 
   rows <- DBI::dbGetQuery(con, sql)
 
@@ -282,7 +283,7 @@ serve_explicar_mcp <- function(project_dir = ".", db_path = NULL) {
   file_q <- args[["file"]] %||% ""
   if (!nzchar(file_q)) stop("file argument is required")
 
-  if (is.null(con)) stop("No database. Run explicar_index_build() first.")
+  if (is.null(con)) stop("No database. Run explicar_ingest() first.")
   if (!DBI::dbExistsTable(con, "wiki")) {
     stop("No wiki pages found. Run explicar_wiki_build() first.")
   }
@@ -298,10 +299,10 @@ serve_explicar_mcp <- function(project_dir = ".", db_path = NULL) {
 }
 
 .mcp_list_files <- function(con) {
-  if (is.null(con)) stop("No database. Run explicar_index_build() first.")
+  if (is.null(con)) stop("No database. Run explicar_ingest() first.")
 
   if (!DBI::dbExistsTable(con, "nodes")) {
-    stop("No nodes table. Run explicar_index_build() first.")
+    stop("No nodes table. Run explicar_ingest() first.")
   }
 
   scripts <- DBI::dbGetQuery(

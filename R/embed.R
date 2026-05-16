@@ -7,7 +7,7 @@
 #' store at `.explicar/explicar.duckdb` so that vector-similarity search is
 #' available via [explicar_semantic_retrieve()] and the MCP `search_code` tool.
 #'
-#' Run [explicar_index_build()] first to populate the nodes table, then call
+#' Run [explicar_ingest()] first to populate the store, then call
 #' this once (or whenever the project changes significantly).
 #'
 #' @param project_dir Project directory.  Default `"."`.
@@ -28,9 +28,9 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Build index + wiki first, then embed
-#' explicar_index_build()
+#' # Ingest + embed
 #' explicar_wiki_build()
+#' explicar_ingest()
 #' explicar_embed()
 #'
 #' # Nodes only (fastest)
@@ -59,12 +59,14 @@ explicar_embed <- function(project_dir = ".",
 
   if (!dir.exists(dirname(db_path))) dir.create(dirname(db_path), recursive = TRUE)
 
-  # Bail early if Ollama is not reachable
-  if (!ollama_available(model, ollama_url)) {
-    if (!quiet) message("explicaR: Ollama unavailable \u2014 skipping vector embeddings")
-    return(invisible(0L))
-  }
-  embed_fn <- ragnar::embed_ollama(model = model, base_url = ollama_url)
+  embed_fn <- tryCatch(
+    ragnar::embed_ollama(model = model, base_url = ollama_url),
+    error = function(e) {
+      if (!quiet) message("explicaR: Ollama unavailable \u2014 skipping vector embeddings")
+      NULL
+    }
+  )
+  if (is.null(embed_fn)) return(invisible(0L))
 
   store <- .ragnar_connect_or_create(db_path, embed_fn)
   if (is.null(store)) {

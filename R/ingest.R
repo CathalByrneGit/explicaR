@@ -35,14 +35,11 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Full pipeline: parse → wiki → site + index
-#' pr <- explicar_parse(".")
+#' # Full pipeline: parse → wiki → ingest
 #' explicar_wiki_build(".", llm_chat = ellmer::chat_anthropic())
-#' explicar_site_build(pr)          # HTML site from wiki/*.md
 #' explicar_ingest(".")             # ragnar index from wiki/*.md
 #'
-#' # After editing wiki/*.md files — rebuild site + re-index (no LLM needed)
-#' explicar_site_build(pr)
+#' # After editing wiki/*.md files — re-index without LLM
 #' explicar_ingest(".", force = TRUE)
 #'
 #' # With vector embeddings for semantic search (Ollama required)
@@ -71,10 +68,14 @@ explicar_ingest <- function(project_dir = ".",
   if (!dir.exists(dirname(db_path))) dir.create(dirname(db_path), recursive = TRUE)
 
   # Build or connect to ragnar store
-  embed_fn <- if (embed && requireNamespace("httr2", quietly = TRUE) &&
-                  ollama_available(embed_model, ollama_url)) {
-    tryCatch(ragnar::embed_ollama(model = embed_model, base_url = ollama_url),
-             error = function(e) NULL)
+  embed_fn <- if (isTRUE(embed)) {
+    tryCatch(
+      ragnar::embed_ollama(model = embed_model, base_url = ollama_url),
+      error = function(e) {
+        if (!quiet) message("explicaR: embed_ollama failed — using BM25 only")
+        NULL
+      }
+    )
   } else NULL
 
   store <- .ragnar_connect_or_create(db_path, embed_fn)
