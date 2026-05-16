@@ -2,7 +2,7 @@
 % Please edit documentation in R/animate.R
 \name{explicar_animate}
 \alias{explicar_animate}
-\title{Build datamations animations for pipeline verb nodes}
+\title{Build animations for pipeline verb nodes}
 \usage{
 explicar_animate(parse_result, snapshots = NULL, max_rows = 50L, verbs = NULL)
 }
@@ -23,8 +23,7 @@ animates all supported verbs found in the parse result.}
 A named list where each element is a list with:
 \itemize{
 \item \code{descriptor}: the verb descriptor (from \code{\link[=verb_descriptor]{verb_descriptor()}})
-\item \code{widget}: a datamations htmlwidget (if datamations is available) or
-a plain HTML fallback
+\item \code{widget}: an HTML before/after comparison widget
 \item \code{json}: the Vega-Lite animation spec as a character string
 }
 }

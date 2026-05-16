@@ -43,8 +43,7 @@ Suggests:
     DBI,
     yaml,
     httpuv,
-    withr,
-    datamations
+    withr
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 URL: https://github.com/CathalByrneGit/explicaR

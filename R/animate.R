@@ -1,4 +1,4 @@
-#' Build datamations animations for pipeline verb nodes
+#' Build animations for pipeline verb nodes
 #'
 #' `explicar_animate()` takes the output of [explicar_parse()] and a snapshot
 #' list of intermediate dataframes, and returns a named list of animation
@@ -22,8 +22,7 @@
 #'
 #' @return A named list where each element is a list with:
 #'   - `descriptor`: the verb descriptor (from [verb_descriptor()])
-#'   - `widget`: a datamations htmlwidget (if datamations is available) or
-#'     a plain HTML fallback
+#'   - `widget`: an HTML before/after comparison widget
 #'   - `json`: the Vega-Lite animation spec as a character string
 #' @export
 #'
@@ -80,7 +79,7 @@ explicar_animate <- function(parse_result,
       desc$data_before <- .illustrative_data(rec$fn_name)
     }
 
-    widget <- .build_widget(desc)
+    widget <- .before_after_widget(desc)
     json   <- .build_json(desc)
 
     results[[key]] <- list(
@@ -103,57 +102,8 @@ explicar_animate <- function(parse_result,
 }
 
 
-#' Attempt to build a datamations widget; fall back to HTML if unavailable
-#' @noRd
-.build_widget <- function(desc) {
-  if (!requireNamespace("datamations", quietly = TRUE)) {
-    return(.fallback_html_widget(desc))
-  }
 
-  tryCatch({
-    if (!is.null(desc$pipeline_expr) && !is.null(desc$data_before)) {
-      # Build the pipeline as a quoted expression with the actual data
-      pipe_call <- .build_datamation_call(desc)
-      if (!is.null(pipe_call)) {
-        return(eval(pipe_call))
-      }
-    }
-    .fallback_html_widget(desc)
-  }, error = function(e) {
-    message("datamations error (", desc$verb, "): ", conditionMessage(e))
-    .fallback_html_widget(desc)
-  })
-}
-
-
-#' Build the datamation() call for supported verbs
-#' @noRd
-.build_datamation_call <- function(desc) {
-  data <- desc$data_before
-  if (is.null(data) || nrow(data) == 0) return(NULL)
-
-  verb <- desc$verb
-
-  # datamations works best with dplyr pipelines expressed as quoted calls
-  tryCatch({
-    switch(verb,
-      filter = {
-        expr <- bquote(datamations::datamation_sanddance(
-          data |> dplyr::filter(.(rlang::parse_expr(desc$description)))
-        ))
-        # Use a simpler approach: just show before/after
-        .before_after_widget(desc)
-      },
-      pivot_longer = {
-        .before_after_widget(desc)
-      },
-      .before_after_widget(desc)
-    )
-  }, error = function(e) NULL)
-}
-
-
-#' Build a before/after HTML comparison widget when datamations is unavailable
+#' Build a before/after HTML comparison widget
 #' @noRd
 .before_after_widget <- function(desc) {
   before_html <- .df_to_html_table(desc$data_before, max_rows = 8L, caption = "Before")
@@ -288,13 +238,3 @@ explicar_animate <- function(parse_result,
   )
 }
 
-#' @noRd
-.fallback_html_widget <- function(desc) {
-  html <- paste0(
-    "<div style='font-family:monospace;padding:8px;background:#f5f5f5'>",
-    "<b>", desc$verb, "</b>: ", nrow(desc$data_before %||% data.frame()), " rows",
-    if (!is.null(desc$data_after)) paste0(" \\u2192 ", nrow(desc$data_after), " rows") else "",
-    "</div>"
-  )
-  structure(list(html = html), class = "html_fallback")
-}
