@@ -2,107 +2,113 @@
 
 > *explicar* (Spanish) — to explain
 
-**explicaR** is an R package that makes data pipelines interpretable and visual. It targets data analysts with complex, multi-script R workflows where the flow of data transformations is implicit and hard to communicate.
+**explicaR** is an R package that makes data pipelines interpretable and visual. Point it at any R project directory and it produces a single, self-contained HTML viewer showing how your scripts, variables, and functions relate — and what each `dplyr`/`tidyr` transformation actually does to your data.
 
 ## What it does
 
 explicaR operates at two levels:
 
-1. **Macro** — an interactive graph showing how scripts, functions, and variables relate across your entire project
-2. **Micro** — animated visualisations showing exactly what each `dplyr`/`tidyr` transformation does to your data
+1. **Macro** — a [Mermaid](https://mermaid.js.org) flowchart DAG showing the full dependency graph across all `.R` files
+2. **Micro** — before/after data tables showing exactly what each `dplyr`/`tidyr` verb does to your data
 
-The output is a **single self-contained HTML file** — no Shiny server, shareable by email or as a static page.
+The output is a **single, self-contained HTML file** — no Shiny server, shareable by email or hosted as a static page.
 
 ```
-┌────────────────────────────────────────────────┐
-│  PIPELINE GRAPH (macro)                        │
-│                                                │
-│  [raw.csv] → [clean.R] → [model.R] → [out.R]  │
-│                  │                             │
-│            [clean_df 980×8]                    │
-│                                                │
-│  ← click any node to see animation below →    │
-├────────────────────────────────────────────────┤
-│  ANIMATION PANEL (micro)                       │
-│                                                │
-│  pivot_longer @ clean.R line 23               │
-│  [animated transformation plays here]          │
-└────────────────────────────────────────────────┘
+┌─────────────────────────┬───────────────────────────┐
+│  Pipeline Graph         │  Detail Panel             │
+│  (Mermaid DAG)          │                           │
+│                         │  variable: clean_df       │
+│  [raw.csv]              │  file: clean.R            │
+│     │ reads             │  shape: 980 × 8           │
+│  [load.R]               │                           │
+│     │ produces          │  filter @ clean.R:23      │
+│  [raw_df 1200×12]       │  ┌──────────┐  ┌───────┐ │
+│     │ uses              │  │ Before   │→ │ After │ │
+│  [clean.R]              │  │ 1200 rows│  │ 980   │ │
+│     │ produces          │  └──────────┘  └───────┘ │
+│  [clean_df 980×8]       │                           │
+│                         │  ← click any node        │
+└─────────────────────────┴───────────────────────────┘
 ```
 
 ## Installation
 
 ```r
-# Install from GitHub
 remotes::install_github("CathalByrneGit/explicaR")
-
-# Optional but recommended: datamations animation engine
-remotes::install_github("microsoft/datamations")
 ```
 
-Core dependencies (`CodeDepends`, `tidygraph`, `visNetwork`, `dplyr`, `purrr`, `jsonlite`) are installed automatically.
+Core hard dependencies (`dplyr`, `purrr`, `jsonlite`, `htmltools`, `glue`, `tibble`, `rlang`) are installed automatically. Everything else is optional — see the [dependency table](#dependencies) below.
 
 ## Quick start
 
 ```r
 library(explicaR)
 
-# Point at any R project directory — opens report in your browser
+# Point at any R project — opens viewer in your browser
 explicar("path/to/your/project")
 ```
 
-That's it. explicaR will:
-1. Parse all `.R` files in the directory
-2. Build the dependency graph
-3. Generate animations for every `dplyr`/`tidyr` verb call it finds
-4. Write `explicar_report.html` and open it
+explicaR will:
+1. Parse all `.R` files using the best available backend (treesitter → base R)
+2. Build the Mermaid dependency DAG
+3. Generate before/after tables for every `dplyr`/`tidyr` verb call found
+4. Write `explicar_viewer.html` and open it
 
 ## Usage
 
-### Full pipeline
+### One-line report
 
 ```r
-# Parse, graph, animate, report — all in one call
 explicar(
   project_dir = "path/to/project",
-  output_file = "pipeline_report.html",
-  title       = "My Pipeline"
+  output_file = "pipeline.html",
+  title       = "My Data Pipeline",
+  direction   = "LR"   # graph direction: TD | LR | BT | RL
 )
 ```
 
 ### Step by step
 
 ```r
-# 1. Parse the project
+# 1. Parse the project (dispatches to best available backend)
 pr <- explicar_parse("path/to/project")
-pr$nodes   # all nodes (scripts, variables, functions, sources)
-pr$edges   # all edges (produces, consumes, calls, reads, writes)
-pr$verbs   # all dplyr/tidyr verb calls found
+pr$nodes   # tibble: scripts, variables, functions, source files
+pr$edges   # tibble: produces, consumes, calls, reads edges
+pr$verbs   # tibble: every dplyr/tidyr verb call found
 
-# 2. Build the macro graph
-graph <- explicar_graph(pr)
-graph  # renders as an interactive visNetwork widget
+# 2. Get the Mermaid diagram text
+cat(explicar_graph(pr))               # paste into GitHub, Quarto, Obsidian…
+cat(explicar_graph(pr, direction = "LR"))
 
-# 3. Attach real data shapes (if you have snapshots)
-snaps <- with_pipeline_trace("path/to/project/clean.R")
+# 3. Attach real data shapes (optional — from targets cache or trace)
+snaps <- with_pipeline_trace("clean.R")
 pr    <- attach_shapes(pr, snaps$snapshots)
 
-# 4. Build animations
-anims <- explicar_animate(pr, snapshots = snaps$snapshots)
-
-# 5. Render the report
-explicar_report(pr, graph, anims)
+# 4. Generate the viewer HTML
+generate_viewer(pr, output_file = "pipeline.html")
 ```
 
-### With a targets project
+### Choose your parse backend
 
-If your project uses [`{targets}`](https://docs.ropensci.org/targets/), explicaR reads the cache directly — no re-execution needed:
+```r
+# Auto (default): treesitter → base-R getParseData() fallback
+pr <- explicar_parse("path/to/project")
+
+# Force a specific backend
+pr <- explicar_parse("path/to/project", backend = "treesitter")
+pr <- explicar_parse("path/to/project", backend = "r")
+```
+
+### With a `{targets}` project
+
+If your project uses [`{targets}`](https://docs.ropensci.org/targets/), explicaR reads the pipeline graph and cache directly — no re-execution needed:
 
 ```r
 # Auto-detected: explicar_mode() returns "targets"
 explicar("path/to/targets/project")
 
-# Or manually
+# Or manually inspect the targets network
+tnet  <- targets_network("path/to/project")
 cache <- explicar_targets("path/to/project")
 pr    <- attach_shapes(pr, cache)
 ```
@@ -112,119 +118,97 @@ pr    <- attach_shapes(pr, cache)
 For projects not using targets:
 
 ```r
-# Intercepts every dplyr/tidyr call and captures before/after snapshots
 trace <- with_pipeline_trace("clean.R")
-trace$snapshots   # named list of captured dataframes
-trace$trace_log   # tibble: fn, input_var, output_var, elapsed_ms
-
-# Run multiple scripts in order
-trace <- trace_pipeline(c("01_load.R", "02_clean.R", "03_model.R"))
+trace$snapshots   # named list of before/after dataframes
+trace$trace_log   # fn, input_var, output_var, elapsed_ms per call
 ```
 
 ### Optional LLM enrichment
 
-```r
-# Enrich undocumented function nodes with plain-English labels via Ollama
-# Requires Ollama running locally: https://ollama.com
-# ollama pull qwen2.5-coder:3b
+Enrich undocumented function nodes with plain-English labels via a local [Ollama](https://ollama.com) model:
 
+```r
 explicar("path/to/project", enrich = TRUE, llm_model = "qwen2.5-coder:3b")
 
-# Or enrich a parse result directly
-pr <- enrich_parse_result(pr)
+# Or directly on a parse result
+pr <- enrich_parse_result(pr, model = "qwen2.5-coder:3b")
 
-# Check if Ollama is available
-ollama_available()
-ollama_models()
+# Check Ollama availability
+ollama_available()   # TRUE/FALSE
+ollama_models()      # character vector of pulled models
 ```
 
-## Searchable code index
+## Code index
 
-explicaR can build a local semantic index of your project so you can ask questions like *"how does the animation pipeline work?"* and get back relevant code and docs — all on-device, nothing sent to external services.
-
-### Build the index
+Build a persistent DuckDB index of your project so repeated `explicar()` runs are fast and you can search the call graph:
 
 ```r
-# Index all R source files (functions, edges, call graph)
+# Build once — only re-parses changed files on subsequent calls
 explicar_index_build()
 
-# Search by keyword or natural language
-explicar_index_retrieve("how does verb animation work")
-explicar_index_retrieve("filter transformation")
+# Keyword search over nodes (functions, variables, scripts)
+explicar_index_retrieve("clean survey data")
+explicar_index_retrieve("pivot", type = "function", top_k = 5)
+
+# Direct DBI access for custom queries
+con <- explicar_index_connect()
+DBI::dbGetQuery(con, "SELECT * FROM nodes WHERE type = 'variable'")
+DBI::dbDisconnect(con, shutdown = TRUE)
 ```
 
-### Generate documentation
+## Documentation search with ragnar
 
-Two complementary approaches, both fully private:
-
-#### 1. Extract from source (fast, no LLM)
-
-Pulls structured documentation straight from your existing roxygen2 comments,
-`man/*.Rd` files, `README.md`, and vignettes.
+For rich hybrid BM25 + vector-similarity search over your package docs (man pages, roxygen comments, README, vignettes), use the [ragnar](https://github.com/tidyverse/ragnar)-backed doc store:
 
 ```r
-# Extract from all local sources
-explicar_index_build_docs()
+# Requires: install.packages("ragnar")
 
-# Choose specific sources
-explicar_index_build_docs(include = c("source", "readme"))
+# Build the doc store — BM25 only (no Ollama needed)
+explicar_ragnar_build(embed = FALSE)
 
-# Also embed chunks for semantic (vector) search
-explicar_index_build_docs(embed = TRUE, embed_model = "nomic-embed-text")
+# Build with vector embeddings for semantic search (Ollama required)
+explicar_ragnar_build(embed = TRUE, embed_model = "nomic-embed-text")
+
+# Hybrid BM25 + VSS retrieval
+explicar_doc_retrieve("how does the animation pipeline work")
+explicar_doc_retrieve("filter rows", n = 5, bm25_only = TRUE)
+
+# Wire into an ellmer chat for conversational Q&A
+# Requires: install.packages(c("ragnar", "ellmer"))
+library(ellmer)
+chat <- chat_ollama(model = "llama3.2")
+chat <- explicar_register_retrieve(chat)
+chat$chat("What does explicar_parse return?")
 ```
 
-Source priority:
-1. `man/*.Rd` — run `devtools::document()` to generate these
-2. `R/*.R` roxygen2 `#'` blocks — works directly on raw source, no generation step needed
+Source priority (deduplication applied):
+1. `man/*.Rd` — most authoritative; run `devtools::document()` to generate
+2. `R/*.R` roxygen `#'` blocks — covers undocumented internals too
 3. `README.md` / `README.Rmd`
 4. `vignettes/*.Rmd`, `.qmd`, `.md`
 
-Every chunk stored includes a `file://` URL pointing back to the exact source location.
+### Local LLM wiki generation
 
-#### 2. Generate wiki pages with a local LLM (richer, requires Ollama)
-
-Sends each source file to a locally-running Ollama model and asks it to write
-a narrative wiki page — same idea as DeepWiki, but running entirely on your
-machine with your private code.
+Generate narrative wiki pages for each source file using a local Ollama model:
 
 ```r
-# Generate one wiki page per R source file + a cross-file architecture overview
 explicar_index_generate_wiki(model = "llama3.2")
 
-# Architecture overview only (faster)
-explicar_index_generate_wiki(model = "mistral", include = "architecture")
-
-# Regenerate with a different model
-explicar_index_generate_wiki(model = "gemma3", force = TRUE)
-```
-
-Each generated page covers:
-- **Overview** — what the module does and why it exists
-- **Key Functions** — purpose, parameters, return value in plain English
-- **How It Works** — internal flow / algorithm explained in prose
-- **Usage Example** — short R snippet where relevant
-
-The architecture overview synthesises all files together to explain how the
-components connect.
-
-### Retrieve across everything
-
-Both extraction and generation store into the same `docs` table, so a single
-retrieve call searches all of it:
-
-```r
-explicar_index_retrieve("how does the animation pipeline work")
-explicar_index_retrieve("what does explicar_parse return")
+# Architecture overview only
+explicar_index_generate_wiki(model = "llama3.2", include = "architecture")
 ```
 
 ### Privacy model
 
 | Feature | Network calls |
-|---------|--------------|
+|---|---|
+| `explicar()` / `explicar_parse()` | None — reads local files |
 | `explicar_index_build()` | None — reads local files |
 | `explicar_index_build_docs()` | None — reads local files |
+| `explicar_ragnar_build(embed = FALSE)` | None |
+| `explicar_ragnar_build(embed = TRUE)` | Local Ollama only |
 | `explicar_index_generate_wiki()` | Local Ollama only |
-| Embeddings (`embed = TRUE`) | Local Ollama only |
+| `enrich = TRUE` / `enrich_parse_result()` | Local Ollama only |
 
 No source code or documentation ever leaves your machine.
 
@@ -232,68 +216,62 @@ No source code or documentation ever leaves your machine.
 
 ```
 explicaR
-├── Parser Layer      parse.R    CodeDepends + getParseData() → edge list
-├── Graph Layer       graph.R    tidygraph + visNetwork → interactive DAG
-├── Shape Layer       shapes.R   nrow × ncol badges on variable nodes
-├── Animation Layer   animate.R  datamations bridge (illustrative + real data)
-│                     verbs.R    per-verb descriptors (filter, mutate, …)
-├── Trace Layer       trace.R    instrumented source() → snapshots
-├── targets Layer     targets.R  cache reader (soft dependency)
-├── Report Layer      report.R   self-contained HTML renderer
-├── Enrich Layer      enrich.R   Ollama LLM enrichment (optional)
-└── Index Layer       index.R          DuckDB code index + vector search
-                      index-docs.R     local doc extraction + LLM wiki generation
+├── Parse Layer       parse.R              dispatch → best available backend
+│                     parse_treesitter.R   treesitter + treesitter.r (Tier 2)
+│                     parse_r_fallback.R   base-R getParseData()     (Tier 3)
+│                     parse_sitting_duck.R DuckDB sitting_duck ext.  (Tier 1, stub)
+├── Graph Layer       graph.R              Mermaid flowchart text generator
+├── Viewer Layer      generate_viewer.R    fills inst/templates/viewer.html
+│                     inst/templates/      self-contained HTML template
+├── Shape Layer       shapes.R             nrow × ncol badges on variable nodes
+├── Animation Layer   animate.R            before/after table widgets
+│                     verbs.R              per-verb descriptors (filter, pivot, …)
+├── Trace Layer       trace.R              instrumented source() → snapshots
+├── targets Layer     targets.R            cache reader + tar_network() topology
+├── Enrich Layer      enrich.R             Ollama LLM node-label enrichment
+├── Index Layer       index.R              DuckDB code graph (nodes/edges/verbs)
+│                     index-docs.R         local doc extraction + wiki generation
+│                     index-ragnar.R       ragnar BM25+VSS doc store
+└── Report Layer      report.R             explicar() orchestrator
 ```
 
-### Node types in the graph
+### Node types in the Mermaid graph
 
-| Shape | Colour | Meaning |
+| Mermaid shape | Colour | Meaning |
 |---|---|---|
-| Box | Blue | Script (`.R` file) |
-| Ellipse | Green | Variable / dataframe |
-| Diamond | Orange | Function |
-| Database | Purple | Source file (CSV, xlsx, …) |
-| Star | Red | Output artefact |
+| Rectangle `[…]` | Blue | Script (`.R` file) |
+| Rounded `(…)` | Green | Variable / dataframe |
+| Hexagon `{{…}}` | Orange | Function |
+| Cylinder `[(…)]` | Purple | Source file (CSV, xlsx, …) |
 
 ### Supported verbs
 
-| Verb | Package | Animation concept |
-|---|---|---|
-| `filter` | dplyr | Rows fade out |
-| `mutate` | dplyr | New column slides in |
-| `select` | dplyr | Unwanted columns slide out |
-| `group_by` | dplyr | Rows cluster by colour |
-| `summarise` | dplyr | Clusters collapse to summary rows |
-| `arrange` | dplyr | Rows reorder |
-| `left_join` | dplyr | Two tables merge |
-| `pivot_longer` | tidyr | Columns fold down into rows |
-| `pivot_wider` | tidyr | Rows lift up into columns |
+Any function exported from `dplyr` or `tidyr` whose first parameter is `.data`, `x`, `data`, or `.tbl` is auto-detected — no hardcoded list. The description for each verb is read directly from the package's own Rd documentation.
 
 ## Dependencies
 
 | Package | Role | Required? |
 |---|---|---|
-| `CodeDepends` | Cross-script dependency analysis | Yes |
-| `tidygraph` | Graph data model | Yes |
-| `visNetwork` | Interactive macro graph | Yes |
-| `dplyr` / `purrr` | Data wrangling utilities | Yes |
-| `jsonlite` / `htmltools` | Report rendering | Yes |
-| `datamations` | Verb-level animation | Optional (GitHub) |
-| `targets` | Pipeline cache reading | Optional |
-| `roxygen2` | Documentation extraction | Optional |
-| `duckdb` / `DBI` | Code index and doc store | Optional |
-| `httr2` | Ollama API calls (enrichment, embeddings, wiki) | Optional |
-| `ggraph` | Static graph export | Optional |
+| `dplyr`, `purrr`, `tibble` | Data wrangling | Yes (hard) |
+| `rlang`, `glue`, `jsonlite`, `htmltools` | Utilities / rendering | Yes (hard) |
+| `treesitter` + `treesitter.r` | Tier-2 parse backend | Optional — enhances parsing |
+| `targets` | Pipeline cache + tar_network() | Optional |
+| `roxygen2` | Roxygen doc extraction | Optional |
+| `ragnar` | Hybrid BM25+VSS doc store | Optional |
+| `ellmer` | LLM chat integration | Optional |
+| `duckdb` + `DBI` | Code index + ragnar store | Optional |
+| `httr2` | Ollama embedding + wiki calls | Optional |
+| `git2r` | Remote repo support | Optional (future) |
 
 ## Design principles
 
-1. **Progressive disclosure** — macro graph first, click to zoom into micro animation
-2. **Zero mandatory re-execution** — uses targets cache when available; illustrative mode always works as a fallback
-3. **Self-contained output** — the HTML report works offline with no running server
-4. **Soft dependencies** — targets, datamations, and LLM enrichment are all optional
+1. **Progressive disclosure** — macro graph first, click to zoom into micro detail
+2. **Zero mandatory re-execution** — uses targets cache when available; illustrative mode always works as fallback
+3. **Self-contained output** — the HTML viewer works offline (graph rendering requires internet for Mermaid CDN)
+4. **Soft dependencies** — every optional feature degrades gracefully; the package works with base R + core tidyverse only
 5. **Shape as signal** — `nrow × ncol` on every variable node tells the pipeline story without animation
 6. **Prefer human-written context** — roxygen docs and inline comments take priority over LLM inference
-7. **Private by default** — the index, doc extraction, and wiki generation all run locally; no source code is sent to external services
+7. **Private by default** — parsing, indexing, doc extraction, and wiki generation all run locally
 
 ## License
 
