@@ -1,0 +1,368 @@
+# explicaR — LLM-readable API reference
+# https://github.com/CathalByrneGit/explicaR
+#
+# explicaR makes R (and Python) data pipelines interpretable and visual.
+# It parses multi-script projects, builds a Mermaid dependency DAG, generates
+# before/after data tables for dplyr/tidyr verbs, and writes a self-contained
+# HTML viewer. All processing is local; no code leaves the machine.
+
+## Quick start
+
+```r
+library(explicaR)
+explicar("path/to/project")          # parse + graph + viewer in one call
+```
+
+## Core functions
+
+### explicar_parse
+```
+explicar_parse(
+  project_dir = ".",
+  pattern     = NULL,                 # auto-derived from languages
+  recursive   = FALSE,
+  backend     = c("auto","treesitter","r"),
+  languages   = "r"                   # also accepts "python"
+) -> list(nodes, edges, verbs)
+```
+Parses R (and optionally Python) scripts. Returns:
+- `nodes`: tibble(name, type, file, line, label, shape_info)
+  - types: "script", "variable", "function", "source"
+- `edges`: tibble(from, to, type)
+  - types: "produces", "consumes", "calls", "reads", "writes", "depends"
+- `verbs`: tibble(file, line, fn_name, input_var, output_var, args, pkg)
+  - one row per dplyr/tidyr verb call found
+
+### explicar_graph
+```
+explicar_graph(
+  parse_result,
+  direction = c("TD","LR","BT","RL"),
+  max_label = 40L
+) -> character(1)
+```
+Returns a Mermaid `flowchart` diagram as a plain string. Paste into GitHub,
+Quarto, or Obsidian. Node shapes: scripts=rectangle, variables=rounded,
+functions=hexagon, source files=cylinder. Dashed arrows for "calls" edges.
+
+### generate_viewer
+```
+generate_viewer(
+  parse_result,
+  title       = "explicaR Pipeline",
+  output_file = "explicar_viewer.html",
+  snapshots   = NULL,
+  direction   = "TD",
+  open        = TRUE,
+  quiet       = FALSE
+) -> invisible(output_file)
+```
+Writes a self-contained HTML file embedding the Mermaid graph + verb
+before/after panels. Requires internet for Mermaid CDN rendering.
+
+### generate_wasm_viewer
+```
+generate_wasm_viewer(
+  parse_result,
+  title       = "explicaR — WASM Viewer",
+  output_file = "explicar_wasm.html",
+  direction   = "TD",
+  open        = TRUE,
+  quiet       = FALSE
+) -> invisible(output_file)
+```
+Tier-2 viewer. Same layout as generate_viewer but embeds DuckDB-WASM for
+interactive SQL queries over the code graph in-browser (no server needed).
+Tables available: nodes, edges, verbs. Requires internet for DuckDB-WASM
+and Mermaid CDN.
+
+### explicar_config
+```
+explicar_config(project_dir = ".") -> list
+```
+Returns active file-filter config. Merges package defaults
+(`inst/config/defaults.yml`) with per-project `.explicar/config.yml` if
+present. Requires `yaml` package for config file reading; falls back to
+hardcoded defaults otherwise.
+Keys: exclude_dirs, exclude_extensions, max_file_size_kb, default_languages, max_depth.
+
+### explicar_wiki_build
+```
+explicar_wiki_build(
+  project_dir = ".",
+  db_path     = NULL,            # default: .explicar/explicar.duckdb
+  llm_chat    = NULL,            # ellmer::Chat | NULL (auto Ollama) | FALSE (fallback)
+  model       = "llama3.2",
+  ollama_url  = "http://localhost:11434",
+  languages   = c("r", "python"),
+  force       = FALSE,
+  quiet       = FALSE
+) -> invisible(n_pages)
+```
+Generates one markdown wiki page per source file using an LLM.
+Stores results in the `wiki` DuckDB table. Change detection: files
+with unchanged mtime are skipped. Fallback: roxygen blocks + parse graph.
+
+### deep_research
+```
+deep_research(
+  chat,                  # ellmer::Chat with retrieval tool registered
+  question,              # research question
+  max_iterations = 5L
+) -> invisible(chat)
+```
+Multi-turn research loop. Plans, iterates (retrieving via ragnar tools),
+then terminates when response starts with "CONCLUSION:".
+
+### explicar_ingest
+```
+explicar_ingest(
+  project_dir = ".",
+  db_path     = NULL,
+  include     = c("wiki", "source", "readme", "vignettes"),
+  embed       = FALSE,
+  embed_model = "nomic-embed-text",
+  ollama_url  = "http://localhost:11434",
+  force       = FALSE,
+  quiet       = FALSE
+) -> invisible(n_chunks)
+```
+Ingests wiki pages + docs into the ragnar RAG store (same DuckDB file).
+Builds BM25 + optional VSS index. Requires ragnar package.
+
+### explicar_llms_txt
+```
+explicar_llms_txt(
+  project_dir = ".",
+  output_file = NULL,    # default: <project_dir>/llms.txt
+  db_path     = NULL,
+  quiet       = FALSE
+) -> invisible(output_file)
+```
+Generates a machine-readable llms.txt for the analyzed project:
+stats, file list, function index, key objects, wiki summaries, Mermaid graph.
+
+### view_explicar_db
+```
+view_explicar_db(
+  project_dir = ".",
+  db_path     = NULL,
+  llm_chat    = NULL,   # ellmer::Chat | NULL (search only)
+  top_k       = 10L,
+  port        = 8080L,
+  host        = "127.0.0.1",
+  open        = TRUE
+) -> invisible(server)
+```
+Tier-3 server (requires httpuv). Endpoints: GET /, POST /chat,
+POST /search, GET /graph.json, GET /wiki.json. Blocks until Ctrl+C.
+ragnar retrieval auto-wired to llm_chat when store exists.
+
+### explicar
+```
+explicar(
+  project_dir  = ".",
+  output_file  = NULL,
+  output_dir   = NULL,
+  title        = "explicaR — <project>",
+  pkg_name     = NULL,
+  languages    = "r",
+  snapshots    = NULL,
+  llm          = FALSE,
+  llm_chat     = NULL,
+  enrich       = FALSE,
+  llm_model    = "qwen2.5-coder:3b",
+  embed        = NULL,
+  embed_model  = "nomic-embed-text",
+  ingest       = TRUE,
+  direction    = "TD",
+  open         = TRUE,
+  db_extensions = FALSE
+) -> invisible(output_file)
+```
+Main entry point. Orchestrates: parse → targets detection → shape
+attachment → optional LLM wiki build → ragnar ingest → generate_viewer.
+New params: languages, llm, llm_chat, embed, ingest, output_dir, pkg_name.
+
+### attach_shapes
+```
+attach_shapes(parse_result, shapes) -> parse_result
+```
+Annotates variable nodes with "nrow × ncol" badges.
+`shapes` is a named list of data frames (name matches node name).
+
+### explicar_animate
+```
+explicar_animate(
+  parse_result,
+  snapshots = NULL,
+  max_rows  = 50L,
+  verbs     = NULL
+) -> named list
+```
+Builds before/after HTML widgets for each verb. Each element: list(descriptor, widget, json).
+Uses real `snapshots` if supplied, otherwise generates illustrative data.
+
+## targets integration
+
+```
+explicar_mode(project_dir) -> "targets" | "instrumented"
+targets_available(project_dir, store) -> logical
+targets_network(project_dir, store, script, outdated) -> list(nodes, edges, manifest)
+explicar_targets(project_dir, names, store) -> named list
+shapes_from_targets(project_dir, store) -> named list of data frames
+targets_manifest(project_dir, store) -> tibble
+```
+`targets_network()` reads `tar_network()` topology and `tar_manifest()`
+descriptions. Works when `_targets/` cache exists. No re-execution required.
+
+## Tracing (non-targets projects)
+
+```
+with_pipeline_trace(
+  script,
+  envir           = new.env(parent = parent.frame()),
+  max_snapshot_rows = 500L
+) -> list(snapshots, trace_log, envir)
+```
+Instruments dplyr/tidyr verbs in `script`, capturing before/after snapshots.
+`trace_log`: tibble(fn, input_var, output_var, line, elapsed_ms).
+
+## LLM enrichment (local Ollama)
+
+```
+enrich_node_label(fn_name_or_body, model, ollama_url, max_words, timeout_s) -> character
+enrich_parse_result(parse_result, model, ollama_url, quiet) -> parse_result
+ollama_available(model, ollama_url) -> logical
+ollama_models(ollama_url) -> character vector
+```
+Enriches undocumented function nodes with plain-English labels via a local
+Ollama instance. Priority: roxygen @title > inline comments > LLM.
+
+## DuckDB code-graph index
+
+```
+explicar_index_build(
+  project_dir, pattern = "*.R", recursive = TRUE,
+  embed = FALSE, embed_model, ollama_url, force = FALSE, quiet = FALSE
+) -> invisible(index_path)
+
+explicar_index_retrieve(
+  query, project_dir, top_k = 10L, type = NULL,
+  embed_model, ollama_url
+) -> tibble(name, type, file, line, label, shape_info)
+
+explicar_index_connect(project_dir, read_only = TRUE) -> DBI connection
+```
+Persistent index at `.explicar/index.duckdb`. Tables: nodes, edges, verbs,
+file_mtimes, docs, doc_embeddings. Only re-parses changed files.
+
+## Local doc indexing (DuckDB)
+
+```
+explicar_index_build_docs(
+  project_dir, include = c("man","source","readme","vignettes"),
+  embed = FALSE, embed_model, ollama_url, force = FALSE, quiet = FALSE
+) -> invisible(n_chunks)
+
+explicar_index_generate_wiki(
+  project_dir, model = "llama3.2", ollama_url, include, force, quiet
+) -> invisible(n_pages)
+```
+Extracts docs from Rd files, roxygen blocks, README, and vignettes.
+Stores in the `docs` table. `generate_wiki` sends each file to Ollama
+and writes a wiki page per source file + an architecture overview.
+
+## ragnar BM25 + VSS doc store
+
+```
+explicar_ragnar_build(
+  project_dir, include = c("man","source","readme","vignettes"),
+  embed = TRUE, embed_model = "nomic-embed-text", ollama_url,
+  target_size = 1000L, force = FALSE, quiet = FALSE
+) -> invisible(store_path)
+
+explicar_doc_retrieve(
+  query, project_dir, n = 10L, bm25_only = FALSE
+) -> tibble(origin, hash, text, source, url, page_title)
+
+explicar_register_retrieve(chat, project_dir, store_description) -> chat
+```
+Requires `ragnar` package. Store at `.explicar/docs.ragnar.duckdb`.
+Hybrid BM25 + vector-similarity search; degrades to BM25 when Ollama
+is unavailable at build time.
+`explicar_register_retrieve` wires the store as a retrieval tool into
+an `ellmer::Chat` for conversational Q&A (requires `ellmer` too).
+
+## Shape utilities
+
+```
+shape_badge(df) -> "nrow × ncol" | NA
+shape_badges(list_of_dfs) -> named character vector
+col_type_summary(df) -> "int(3) dbl(2) chr(1)"
+shape_description(df) -> "980 × 8 | dbl(5) int(2) chr(1)"
+```
+
+## Verb descriptors
+
+```
+verb_descriptor(verb_record, snapshots) -> list | NULL
+verb_filter(data_before, args_text, output_var, data_after) -> descriptor
+verb_pivot_longer(data_before, cols_text, names_to, values_to, ...) -> descriptor
+verb_pivot_wider(data_before, names_from, values_from, ...) -> descriptor
+```
+`verb_descriptor` dispatches on `verb_record$fn_name`. Returns NULL for
+unrecognised verbs. Descriptor fields: verb, pkg, description,
+data_before, data_after, pipeline_expr, output_var.
+
+## Data structures
+
+### parse_result (returned by explicar_parse)
+```
+list(
+  nodes = tibble(name, type, file, line, label, shape_info),
+  edges = tibble(from, to, type),
+  verbs = tibble(file, line, fn_name, input_var, output_var, args, pkg)
+)
+```
+
+### node types
+- "script"   — a .R or .py source file
+- "variable" — a named R/Python object (LHS of assignment)
+- "function" — a named function defined in the project
+- "source"   — raw data file (CSV, xlsx, …) or Python import
+
+### edge types
+- "produces" — script/function → variable (LHS assignment)
+- "consumes" — variable → script (variable read in another script)
+- "calls"    — script → function (SYMBOL_FUNCTION_CALL)
+- "reads"    — script → source file / Python module import
+- "writes"   — script → output file
+- "depends"  — targets: target → upstream target
+
+## File layout (installed package)
+
+```
+R/
+  parse.R              — dispatch layer (explicar_parse)
+  parse_treesitter.R   — tree-sitter backend (R files)
+  parse_treesitter.R   — tree-sitter backend (R files)
+  parse_r_fallback.R   — getParseData() backend
+  parse_sitting_duck.R — DuckDB sitting_duck stub (future Tier 1)
+  parse_python.R       — Python parser (treesitter.python or regex)
+  graph.R              — Mermaid flowchart generator
+  generate_viewer.R    — HTML template filler
+  animate.R            — before/after verb widgets
+  verbs.R              — verb descriptor factories
+  shapes.R             — shape badge utilities
+  targets.R            — targets cache + network integration
+  trace.R              — instrumented source()
+  enrich.R             — Ollama LLM enrichment
+  report.R             — explicar() orchestrator
+  index.R              — DuckDB code-graph index
+  index-docs.R         — local doc extraction + wiki generation
+  index-ragnar.R       — ragnar BM25+VSS doc store
+inst/
+  templates/viewer.html — self-contained HTML template
+  llms.txt              — this file
+```
