@@ -38,7 +38,7 @@
 #' explicar_index_build_docs(embed = TRUE, embed_model = "nomic-embed-text")
 #'
 #' # After building, retrieve relevant docs
-#' explicar_index_retrieve("how does verb animation work")
+#' explicar_index_retrieve("how does the parse dispatch work")
 #' }
 explicar_index_build_docs <- function(project_dir = ".",
                                       include     = c("man", "source",

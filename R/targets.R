@@ -87,22 +87,6 @@ targets_available <- function(project_dir = ".",
 }
 
 
-#' Detect explicaR execution mode
-#'
-#' Determines whether to use the targets cache or instrumented execution for
-#' retrieving intermediate dataframes.
-#'
-#' @param project_dir Path to the project directory.
-#' @param store Path to the targets store.
-#'
-#' @return One of `"targets"` or `"instrumented"`.
-#' @export
-explicar_mode <- function(project_dir = ".",
-                          store = file.path(project_dir, "_targets")) {
-  if (targets_available(project_dir, store)) "targets" else "instrumented"
-}
-
-
 #' Build a shapes list from a targets cache
 #'
 #' Reads all data-frame-typed targets and returns a named list suitable for

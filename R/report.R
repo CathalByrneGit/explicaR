@@ -109,11 +109,8 @@ explicar <- function(project_dir  = ".",
 
   message("explicaR: parsing ", project_dir)
 
-  mode <- explicar_mode(project_dir)
-  message("explicaR: mode = ", mode)
-
-  if (mode == "targets") {
-    message("explicaR: reading targets network")
+  if (targets_available(project_dir)) {
+    message("explicaR: targets cache detected")
     tnet         <- targets_network(project_dir)
     parse_result <- explicar_parse(project_dir, languages = languages)
     parse_result$nodes <- tnet$nodes

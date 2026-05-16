@@ -4,8 +4,8 @@
 #' inside the project directory. On subsequent calls only changed files are
 #' re-parsed, making repeated `explicar()` runs fast.
 #'
-#' When the `httr2` package is available and Ollama is running, embeddings can
-#' be stored alongside the graph for semantic (vector) retrieval.
+#' For semantic (vector) search, run [explicar_embed()] after building the
+#' index — it uses the ragnar VSS store in `.explicar/explicar.duckdb`.
 #'
 #' @name explicar_index
 NULL
@@ -24,10 +24,6 @@ NULL
 #' @param project_dir Path to the R project directory. Default `"."`.
 #' @param pattern     Glob pattern for R scripts. Default `"*.R"`.
 #' @param recursive   Recurse into sub-directories. Default `TRUE`.
-#' @param embed       Generate text embeddings for semantic retrieval.
-#'   Requires Ollama to be running and the `httr2` package.  Default `FALSE`.
-#' @param embed_model Ollama embedding model. Default `"nomic-embed-text"`.
-#' @param ollama_url  Ollama API base URL. Default `"http://localhost:11434"`.
 #' @param force       Re-parse all files even if unchanged. Default `FALSE`.
 #' @param quiet       Suppress progress messages. Default `FALSE`.
 #'
@@ -42,15 +38,12 @@ NULL
 #' # Force a full rebuild
 #' explicar_index_build(force = TRUE)
 #'
-#' # Also embed nodes for semantic search (requires Ollama)
-#' explicar_index_build(embed = TRUE, embed_model = "nomic-embed-text")
+#' # Then embed nodes for semantic search (uses ragnar, not httr2)
+#' explicar_embed()
 #' }
 explicar_index_build <- function(project_dir = ".",
                                  pattern      = "*.R",
                                  recursive    = TRUE,
-                                 embed        = FALSE,
-                                 embed_model  = "nomic-embed-text",
-                                 ollama_url   = "http://localhost:11434",
                                  force        = FALSE,
                                  quiet        = FALSE) {
   .require_duckdb()
@@ -86,7 +79,7 @@ explicar_index_build <- function(project_dir = ".",
   # Remove stale entries before re-inserting
   .remove_file_entries(con, stale)
 
-  # Parse the full project (CodeDepends needs all files together for edges)
+  # Parse the full project to get complete edge topology across all files
   parse_result <- explicar_parse(project_dir, pattern = glob2rx(pattern),
                                  recursive = recursive)
 
@@ -98,20 +91,6 @@ explicar_index_build <- function(project_dir = ".",
   .replace_edges(con, parse_result$edges)
   .update_mtimes(con, stale)
   .upsert_functions(con, nodes)   # populate spec's `functions` table
-
-  if (embed) {
-    if (!requireNamespace("httr2", quietly = TRUE)) {
-      if (!quiet) message("Skipping embeddings: 'httr2' package not installed.")
-    } else if (!ollama_available(embed_model, ollama_url)) {
-      if (!quiet) {
-        message("Skipping embeddings: Ollama not running or model '",
-                embed_model, "' unavailable.")
-      }
-    } else {
-      if (!quiet) message("Generating embeddings...")
-      .embed_nodes(con, embed_model, ollama_url, quiet = quiet)
-    }
-  }
 
   if (!quiet) message("Index saved to: ", idx_path)
   invisible(idx_path)
@@ -127,13 +106,9 @@ explicar_index_build <- function(project_dir = ".",
 #' @param project_dir Path to the R project directory. Default `"."`.
 #' @param top_k       Maximum number of results. Default `10L`.
 #' @param type        Optional node-type filter, e.g. `"function"`.
-#' @param embed_model Ollama model used to embed the query (must match the
-#'   model used at index time). Default `"nomic-embed-text"`.
-#' @param ollama_url  Ollama API base URL.
-#'
 #' @return A [tibble][tibble::tibble] of matching nodes, ordered by relevance,
 #'   with columns `name`, `type`, `file`, `line`, `label`, `shape_info`, and
-#'   optionally `similarity` when vector search is used.
+#'   optionally `similarity` when the ragnar VSS store is available.
 #' @export
 #'
 #' @examples
@@ -144,9 +119,7 @@ explicar_index_build <- function(project_dir = ".",
 explicar_index_retrieve <- function(query,
                                     project_dir = ".",
                                     top_k       = 10L,
-                                    type        = NULL,
-                                    embed_model = "nomic-embed-text",
-                                    ollama_url  = "http://localhost:11434") {
+                                    type        = NULL) {
   .require_duckdb()
 
   project_dir <- normalizePath(project_dir, mustWork = TRUE)
@@ -173,7 +146,6 @@ explicar_index_retrieve <- function(query,
     if (!is.null(result) && nrow(result) > 0L) return(result)
   }
 
-  # Legacy path: index.duckdb with optional httr2 vector search
   idx_path <- .index_path(project_dir)
   if (!file.exists(idx_path)) {
     stop("No index found at '", idx_path, "'. Run explicar_index_build() first.")
@@ -182,16 +154,6 @@ explicar_index_retrieve <- function(query,
   con <- DBI::dbConnect(duckdb::duckdb(), dbdir = idx_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
 
-  if (.has_embeddings(con) &&
-      requireNamespace("httr2", quietly = TRUE) &&
-      ollama_available(embed_model, ollama_url)) {
-    q_vec <- .ollama_embed(query, embed_model, ollama_url)
-    if (!is.null(q_vec)) {
-      return(.vector_search(con, q_vec, top_k, type))
-    }
-  }
-
-  # Fallback: keyword search
   .keyword_search(con, query, top_k, type)
 }
 
@@ -275,14 +237,7 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
     )
   ")
 
-  DBI::dbExecute(con, "
-    CREATE TABLE IF NOT EXISTS doc_embeddings (
-      doc_id    VARCHAR PRIMARY KEY,
-      embedding FLOAT[]
-    )
-  ")
-
-  # ── AGENTS.md v0.3+ schema additions ──────────────────────────────────────
+  # ── v0.3+ schema additions ────────────────────────────────────────────────
   DBI::dbExecute(con, "
     CREATE TABLE IF NOT EXISTS files (
       path          VARCHAR PRIMARY KEY,
@@ -322,20 +277,6 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
     )
   ")
 
-  invisible(con)
-}
-
-.ensure_embeddings_table <- function(con, dim) {
-  if (!DBI::dbExistsTable(con, "embeddings")) {
-    DBI::dbExecute(con, sprintf("
-      CREATE TABLE embeddings (
-        name      VARCHAR,
-        file      VARCHAR,
-        embedding FLOAT[%d],
-        PRIMARY KEY (name, file)
-      )
-    ", as.integer(dim)))
-  }
   invisible(con)
 }
 
@@ -449,79 +390,6 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
 }
 
 # ---------------------------------------------------------------------------
-# Embedding helpers
-# ---------------------------------------------------------------------------
-
-.has_embeddings <- function(con) {
-  DBI::dbExistsTable(con, "embeddings") &&
-    nrow(DBI::dbGetQuery(con, "SELECT 1 FROM embeddings LIMIT 1")) > 0L
-}
-
-.embed_nodes <- function(con, model, ollama_url, quiet) {
-  # Find nodes that don't yet have embeddings
-  candidates <- DBI::dbGetQuery(con, "
-    SELECT n.name, n.file, n.type, n.label
-    FROM nodes n
-    LEFT JOIN embeddings e ON n.name = e.name AND n.file = e.file
-    WHERE e.name IS NULL
-  ")
-
-  if (nrow(candidates) == 0L) {
-    if (!quiet) message("All nodes are already embedded.")
-    return(invisible())
-  }
-
-  texts  <- paste0(candidates$type, ": ", candidates$name, ". ",
-                   ifelse(is.na(candidates$label), "", candidates$label))
-  total  <- nrow(candidates)
-  failed <- 0L
-
-  for (i in seq_len(total)) {
-    emb <- .ollama_embed(texts[[i]], model, ollama_url)
-    if (is.null(emb)) {
-      failed <- failed + 1L
-      next
-    }
-
-    # Create table on first successful embedding (dimension is model-specific)
-    if (!DBI::dbExistsTable(con, "embeddings")) {
-      .ensure_embeddings_table(con, length(emb))
-    }
-
-    emb_literal <- paste0("[", paste(emb, collapse = ","), "]")
-    dim_type    <- sprintf("FLOAT[%d]", length(emb))
-    DBI::dbExecute(con, sprintf(
-      "INSERT OR REPLACE INTO embeddings VALUES ('%s', '%s', %s::%s)",
-      gsub("'", "''", candidates$name[[i]]),
-      gsub("'", "''", candidates$file[[i]]),
-      emb_literal,
-      dim_type
-    ))
-
-    if (!quiet && i %% 20L == 0L) {
-      message("  Embedded ", i, " / ", total)
-    }
-  }
-
-  if (!quiet) {
-    message("Embeddings complete: ", total - failed, " stored, ", failed, " skipped.")
-  }
-  invisible()
-}
-
-#' @keywords internal
-.ollama_embed <- function(text, model, ollama_url) {
-  tryCatch({
-    resp <- httr2::request(paste0(ollama_url, "/api/embed")) |>
-      httr2::req_body_json(list(model = model, input = text)) |>
-      httr2::req_timeout(30L) |>
-      httr2::req_perform()
-    body <- httr2::resp_body_json(resp)
-    unlist(body$embeddings[[1L]])
-  }, error = function(e) NULL)
-}
-
-# ---------------------------------------------------------------------------
 # Search helpers
 # ---------------------------------------------------------------------------
 
@@ -539,24 +407,6 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
   )
   params <- if (!is.null(type)) list(like_pat, like_pat, type) else list(like_pat, like_pat)
   tibble::as_tibble(DBI::dbGetQuery(con, sql, params = params))
-}
-
-.vector_search <- function(con, query_vec, top_k, type) {
-  dim      <- length(query_vec)
-  vec_lit  <- paste0("[", paste(query_vec, collapse = ","), "]")
-  dim_type <- sprintf("FLOAT[%d]", dim)
-
-  sql <- paste0(
-    "SELECT n.name, n.type, n.file, n.line, n.label, n.shape_info,",
-    "  (1 - array_cosine_distance(e.embedding, ", vec_lit, "::", dim_type, ")) AS similarity",
-    " FROM nodes n",
-    " JOIN embeddings e ON n.name = e.name AND n.file = e.file",
-    " WHERE array_length(e.embedding) = ", dim,
-    .type_clause(type),
-    " ORDER BY similarity DESC",
-    " LIMIT ", as.integer(top_k)
-  )
-  tibble::as_tibble(DBI::dbGetQuery(con, sql))
 }
 
 # ---------------------------------------------------------------------------

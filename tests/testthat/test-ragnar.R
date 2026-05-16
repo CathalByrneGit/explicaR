@@ -13,7 +13,6 @@ make_pkg_project <- function() {
   writeLines(c("Package: testpkg", "Version: 0.1.0"),
              file.path(dir, "DESCRIPTION"))
 
-  # R/ with roxygen-documented function
   dir.create(file.path(dir, "R"))
   writeLines(c(
     "#' Compute the mean of a vector",
@@ -23,7 +22,6 @@ make_pkg_project <- function() {
     "my_mean <- function(x) mean(x)"
   ), file.path(dir, "R", "utils.R"))
 
-  # README
   writeLines(c(
     "# testpkg",
     "",
@@ -38,13 +36,10 @@ make_pkg_project <- function() {
 }
 
 # ---------------------------------------------------------------------------
-# .ragnar_chunk helper (no ragnar required for unit test)
+# .ragnar_chunk helper
 # ---------------------------------------------------------------------------
 
-test_that(".ragnar_chunk falls back when ragnar is missing", {
-  # Force the fallback by testing with a dummy markdown text
-  # (ragnar IS installed per skip_if_not_installed, but we can test the
-  #  return-type contract)
+test_that(".ragnar_chunk returns a character vector for markdown input", {
   result <- explicaR:::.ragnar_chunk("# Title\n\nSome content here.", 1000L)
   expect_type(result, "character")
   expect_true(length(result) >= 1L)
@@ -57,115 +52,141 @@ test_that(".ragnar_chunk returns empty character for blank input", {
 })
 
 # ---------------------------------------------------------------------------
-# Store creation
+# explicar_ingest — store creation
 # ---------------------------------------------------------------------------
 
-test_that("explicar_ragnar_build creates the store file", {
+test_that("explicar_ingest creates the unified explicar.duckdb store file", {
   proj <- make_pkg_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  # BM25-only (no Ollama needed in tests)
-  path <- explicar_ragnar_build(proj, embed = FALSE, quiet = TRUE)
-  expect_true(file.exists(path))
-  expect_true(grepl("ragnar\\.duckdb$", path))
+  explicar_ingest(proj, include = "readme", embed = FALSE, quiet = TRUE)
+
+  db_path <- file.path(proj, ".explicar", "explicar.duckdb")
+  expect_true(file.exists(db_path))
 })
 
-test_that("explicar_ragnar_build indexes README chunks", {
+test_that("explicar_ingest indexes README chunks into the store", {
   proj <- make_pkg_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  explicar_ragnar_build(proj, include = "readme", embed = FALSE, quiet = TRUE)
-  store <- ragnar::ragnar_store_connect(explicaR:::.ragnar_store_path(proj))
-  rows  <- DBI::dbGetQuery(store@con,
+  explicar_ingest(proj, include = "readme", embed = FALSE, quiet = TRUE)
+
+  db_path <- file.path(proj, ".explicar", "explicar.duckdb")
+  store   <- ragnar::ragnar_store_connect(db_path, read_only = TRUE)
+  rows    <- DBI::dbGetQuery(store@con,
     "SELECT * FROM chunks WHERE page_title = 'README'")
   expect_true(nrow(rows) >= 1L)
-  expect_true(all(rows$source == "local:testpkg"))
 })
 
-test_that("explicar_ragnar_build indexes roxygen source chunks", {
+test_that("explicar_ingest indexes roxygen source chunks", {
   proj <- make_pkg_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  explicar_ragnar_build(proj, include = "source", embed = FALSE, quiet = TRUE)
-  store <- ragnar::ragnar_store_connect(explicaR:::.ragnar_store_path(proj))
-  rows  <- DBI::dbGetQuery(store@con,
+  explicar_ingest(proj, include = "source", embed = FALSE, quiet = TRUE)
+
+  db_path <- file.path(proj, ".explicar", "explicar.duckdb")
+  store   <- ragnar::ragnar_store_connect(db_path, read_only = TRUE)
+  rows    <- DBI::dbGetQuery(store@con,
     "SELECT * FROM chunks WHERE text LIKE '%my_mean%'")
   expect_true(nrow(rows) >= 1L)
 })
 
-test_that("explicar_ragnar_build is idempotent without force", {
+test_that("explicar_ingest is idempotent without force — second call inserts 0 new chunks", {
   proj <- make_pkg_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  explicar_ragnar_build(proj, embed = FALSE, quiet = TRUE)
+  n1 <- explicar_ingest(proj, include = "readme", embed = FALSE, quiet = TRUE)
+  n2 <- explicar_ingest(proj, include = "readme", embed = FALSE, quiet = TRUE)
 
-  # Second call with the same source should print "already indexed"
-  msg <- capture_messages(
-    explicar_ragnar_build(proj, embed = FALSE, quiet = FALSE)
-  )
-  expect_true(any(grepl("already indexed", msg)))
+  expect_equal(n2, 0L)
 })
 
-test_that("explicar_ragnar_build force = TRUE re-indexes", {
+test_that("explicar_ingest force = TRUE re-indexes chunks", {
   proj <- make_pkg_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  explicar_ragnar_build(proj, include = "readme", embed = FALSE, quiet = TRUE)
+  explicar_ingest(proj, include = "readme", embed = FALSE, quiet = TRUE)
 
-  msg <- capture_messages(
-    explicar_ragnar_build(proj, include = "readme", embed = FALSE,
-                          force = TRUE, quiet = FALSE)
+  msgs <- capture_messages(
+    explicar_ingest(proj, include = "readme", embed = FALSE,
+                    force = TRUE, quiet = FALSE)
   )
-  # Should report inserting chunks again
-  expect_true(any(grepl("chunk", msg, ignore.case = TRUE)))
+  expect_true(any(grepl("chunk|Ingested", msgs, ignore.case = TRUE)))
 })
 
 # ---------------------------------------------------------------------------
-# Retrieval
+# explicar_semantic_retrieve — retrieval
 # ---------------------------------------------------------------------------
 
-test_that("explicar_doc_retrieve returns a data frame", {
+test_that("explicar_semantic_retrieve returns a data frame after ingest", {
   proj <- make_pkg_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  explicar_ragnar_build(proj, include = "readme", embed = FALSE, quiet = TRUE)
-  result <- explicar_doc_retrieve("overview", project_dir = proj,
-                                   n = 5L, bm25_only = TRUE)
+  explicar_ingest(proj, include = "readme", embed = FALSE, quiet = TRUE)
+  result <- explicar_semantic_retrieve("overview", project_dir = proj,
+                                       top_k = 5L, bm25_only = TRUE)
   expect_true(is.data.frame(result))
   expect_true("text" %in% names(result))
 })
 
-test_that("explicar_doc_retrieve respects n parameter", {
+test_that("explicar_semantic_retrieve respects top_k parameter", {
   proj <- make_pkg_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  explicar_ragnar_build(proj, include = c("readme", "source"),
-                        embed = FALSE, quiet = TRUE)
-  result <- explicar_doc_retrieve(".", project_dir = proj,
-                                   n = 2L, bm25_only = TRUE)
+  explicar_ingest(proj, include = c("readme", "source"),
+                  embed = FALSE, quiet = TRUE)
+  result <- explicar_semantic_retrieve(".", project_dir = proj,
+                                       top_k = 2L, bm25_only = TRUE)
   expect_lte(nrow(result), 2L)
 })
 
-test_that("explicar_doc_retrieve errors when no store exists", {
+test_that("explicar_semantic_retrieve errors with clear message when no store exists", {
   proj <- tempfile("empty_ragnar_")
   dir.create(proj)
   on.exit(unlink(proj, recursive = TRUE))
 
   expect_error(
-    explicar_doc_retrieve("anything", project_dir = proj),
-    "explicar_ragnar_build"
+    explicar_semantic_retrieve("anything", project_dir = proj),
+    "No store found"
   )
 })
 
-test_that("explicar_ragnar_build errors gracefully when ragnar is missing", {
-  # We're inside skip_if_not_installed(ragnar) so ragnar IS available.
-  # Test the error message for a missing store instead.
-  proj <- tempfile("no_store_")
-  dir.create(proj)
+# ---------------------------------------------------------------------------
+# Deprecated wrappers — still callable but emit a warning
+# ---------------------------------------------------------------------------
+
+test_that("explicar_ragnar_build emits a deprecation warning", {
+  proj <- make_pkg_project()
   on.exit(unlink(proj, recursive = TRUE))
 
-  expect_error(
-    explicar_doc_retrieve("test", project_dir = proj),
-    regexp = "explicar_ragnar_build"
+  expect_warning(
+    explicar_ragnar_build(proj, include = "readme", embed = FALSE, quiet = TRUE),
+    "deprecated"
+  )
+})
+
+test_that("explicar_ragnar_build returns path to explicar.duckdb", {
+  proj <- make_pkg_project()
+  on.exit(unlink(proj, recursive = TRUE))
+
+  path <- suppressWarnings(
+    explicar_ragnar_build(proj, include = "readme", embed = FALSE, quiet = TRUE)
+  )
+  expect_true(grepl("explicar\\.duckdb$", path))
+  expect_true(file.exists(path))
+})
+
+test_that("explicar_doc_retrieve emits a deprecation warning", {
+  proj <- make_pkg_project()
+  on.exit(unlink(proj, recursive = TRUE))
+
+  suppressWarnings(
+    explicar_ingest(proj, include = "readme", embed = FALSE, quiet = TRUE)
+  )
+
+  expect_warning(
+    explicar_doc_retrieve("overview", project_dir = proj,
+                          n = 3L, bm25_only = TRUE),
+    "deprecated"
   )
 })

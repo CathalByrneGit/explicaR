@@ -1,12 +1,12 @@
 #' ragnar-backed documentation store for explicaR
 #'
 #' Provides hybrid BM25 + vector-similarity retrieval over local package
-#' documentation (man pages, roxygen comments, README, vignettes) using the
-#' [ragnar](https://github.com/tidyverse/ragnar) package.
+#' documentation using the [ragnar](https://github.com/tidyverse/ragnar) package.
 #'
-#' The ragnar store lives at `.explicar/docs.ragnar.duckdb`, separate from the
-#' code-graph index.  All operations degrade gracefully when ragnar (or Ollama)
-#' is not available.
+#' The unified store lives at `.explicar/explicar.duckdb`.
+#' Use [explicar_ingest()] to build it and [explicar_semantic_retrieve()] to
+#' query it.  The functions in this file (`explicar_ragnar_build`,
+#' `explicar_doc_retrieve`) are deprecated wrappers kept for compatibility.
 #'
 #' @name explicar_ragnar
 NULL
@@ -21,7 +21,7 @@ NULL
 }
 
 .ragnar_store_path <- function(project_dir) {
-  file.path(.index_dir(project_dir), "docs.ragnar.duckdb")
+  .explicar_db_path(project_dir)
 }
 
 #' Build or reuse an embedding function, falling back gracefully
@@ -197,36 +197,31 @@ NULL
 
 #' Build (or update) the ragnar documentation store
 #'
-#' Extracts documentation from the package's own sources, chunks it with
-#' `ragnar::markdown_chunk()`, and stores the result in a DuckDB-backed
-#' ragnar store at `.explicar/docs.ragnar.duckdb`.  Hybrid BM25 + vector-
-#' similarity retrieval is available automatically when Ollama is running.
+#' @description
+#' `r lifecycle::badge("deprecated")`
+#'
+#' This function is deprecated. Use [explicar_ingest()] instead, which writes
+#' to the unified `.explicar/explicar.duckdb` store.
+#'
+#' `"man"` (Rd file indexing) is not supported by [explicar_ingest()]; use
+#' `include = "source"` for roxygen-based doc indexing.
 #'
 #' @param project_dir Path to the R project directory.  Default `"."`.
-#' @param include Sources to index: any subset of `c("man", "source",
-#'   "readme", "vignettes")`.
-#' @param embed Logical; generate vector embeddings via Ollama for semantic
-#'   (VSS) search.  Requires Ollama running locally.  Default `TRUE`.
+#' @param include Sources to index.
+#' @param embed Logical; generate vector embeddings.  Default `TRUE`.
 #' @param embed_model Ollama embedding model.  Default `"nomic-embed-text"`.
 #' @param ollama_url Ollama API base URL.
-#' @param target_size Target chunk size in characters.  Default `1000L`.
-#' @param force Re-index even if the store already contains entries for this
-#'   package.  Default `FALSE`.
+#' @param target_size Ignored (kept for compatibility).
+#' @param force Re-index even if already present.  Default `FALSE`.
 #' @param quiet Suppress progress messages.  Default `FALSE`.
 #'
-#' @return Invisibly, the path to the ragnar store file.
+#' @return Invisibly, the path to `.explicar/explicar.duckdb`.
 #' @export
 #'
 #' @examples
 #' \dontrun{
-#' # Build with vector embeddings (Ollama must be running)
-#' explicar_ragnar_build()
-#'
-#' # BM25-only (no Ollama needed)
-#' explicar_ragnar_build(embed = FALSE)
-#'
-#' # Then retrieve
-#' explicar_doc_retrieve("how does verb animation work")
+#' # Deprecated \u2014 use explicar_ingest() instead:
+#' explicar_ingest("path/to/project", embed = FALSE)
 #' }
 explicar_ragnar_build <- function(project_dir = ".",
                                    include     = c("man", "source",
@@ -237,181 +232,75 @@ explicar_ragnar_build <- function(project_dir = ".",
                                    target_size = 1000L,
                                    force       = FALSE,
                                    quiet       = FALSE) {
-  if (!.ragnar_available()) {
-    stop(
-      "The 'ragnar' package is required.\n",
-      "Install with: install.packages('ragnar')",
-      call. = FALSE
+  .Deprecated("explicar_ingest",
+    msg = paste0(
+      "explicar_ragnar_build() is deprecated and will be removed in v1.0.\n",
+      "Use explicar_ingest() which writes to the unified .explicar/explicar.duckdb store.\n",
+      "Note: 'man' (Rd file) indexing is not available via explicar_ingest()."
     )
-  }
+  )
+
+  # Map old include values to those supported by explicar_ingest()
+  ingest_include <- intersect(include, c("source", "readme", "vignettes"))
+  if ("wiki" %in% include) ingest_include <- c(ingest_include, "wiki")
 
   project_dir <- normalizePath(project_dir, mustWork = TRUE)
-  idx_dir     <- .index_dir(project_dir)
-  if (!dir.exists(idx_dir)) dir.create(idx_dir, recursive = TRUE)
+  db_path     <- .explicar_db_path(project_dir)
 
-  store_path <- .ragnar_store_path(project_dir)
-  pkg_name   <- .read_pkg_name(project_dir)
-  source_id  <- paste0("local:", pkg_name)
-
-  # Resolve embedding function
-  embed_fn <- if (embed) .ragnar_embed_fn(ollama_url, embed_model) else NULL
-  if (embed && is.null(embed_fn) && !quiet) {
-    message("Ollama unavailable \u2014 building BM25-only store (no vector embeddings).")
-  }
-
-  # Create or open store
-  if (file.exists(store_path) && !force) {
-    store <- ragnar::ragnar_store_connect(store_path)
-
-    # Check whether this source is already indexed
-    n_existing <- tryCatch(
-      nrow(DBI::dbGetQuery(store@con,
-        paste0("SELECT 1 FROM chunks WHERE origin LIKE '",
-               gsub("'", "''", source_id), "%' LIMIT 1"))),
-      error = function(e) 0L
-    )
-    if (n_existing > 0L) {
-      if (!quiet) message("already indexed (", source_id, "). Use force = TRUE to rebuild.")
-      return(invisible(store_path))
+  tryCatch(
+    explicar_ingest(
+      project_dir = project_dir,
+      include     = if (length(ingest_include)) ingest_include else c("source", "readme"),
+      embed       = embed,
+      embed_model = embed_model,
+      ollama_url  = ollama_url,
+      force       = force,
+      quiet       = quiet
+    ),
+    error = function(e) {
+      if (!quiet) message("explicar_ragnar_build: ingest failed: ", conditionMessage(e))
     }
+  )
 
-    # Remove stale rows for this source before re-inserting
-    tryCatch(
-      DBI::dbExecute(store@con,
-        paste0("DELETE FROM chunks WHERE origin LIKE '",
-               gsub("'", "''", source_id), "%'")),
-      error = function(e) invisible(NULL)
-    )
-  } else {
-    store <- ragnar::ragnar_store_create(
-      location   = store_path,
-      embed      = embed_fn,
-      version    = 1L,
-      overwrite  = force && file.exists(store_path),
-      extra_cols = data.frame(source = character(), url = character(),
-                              page_title = character())
-    )
-    if (!quiet && force) message("Removed existing ragnar store.")
-  }
-
-  if (!quiet) message("Building ragnar doc store for ", pkg_name, "...")
-
-  # Collect chunks from each source type
-  all_chunks <- list()
-
-  if ("man" %in% include) {
-    ch <- .ragnar_rd_chunks(project_dir, source_id, pkg_name, target_size)
-    if (!is.null(ch) && nrow(ch) > 0L) {
-      if (!quiet) message("  man/: ", nrow(ch), " chunk(s)")
-      all_chunks[[length(all_chunks) + 1L]] <- ch
-    }
-  }
-
-  # Track names already covered by Rd for deduplication with source chunks
-  rd_names <- if ("man" %in% include && length(all_chunks)) {
-    unique(all_chunks[[length(all_chunks)]]$page_title)
-  } else {
-    character(0L)
-  }
-
-  if ("source" %in% include) {
-    ch <- .ragnar_source_chunks(project_dir, source_id, rd_names, target_size)
-    if (!is.null(ch) && nrow(ch) > 0L) {
-      if (!quiet) message("  R/: ", nrow(ch), " chunk(s)")
-      all_chunks[[length(all_chunks) + 1L]] <- ch
-    }
-  }
-
-  if ("readme" %in% include) {
-    ch <- .ragnar_readme_chunks(project_dir, source_id, target_size)
-    if (!is.null(ch) && nrow(ch) > 0L) {
-      if (!quiet) message("  README: ", nrow(ch), " chunk(s)")
-      all_chunks[[length(all_chunks) + 1L]] <- ch
-    }
-  }
-
-  if ("vignettes" %in% include) {
-    ch <- .ragnar_vignette_chunks(project_dir, source_id, target_size)
-    if (!is.null(ch) && nrow(ch) > 0L) {
-      if (!quiet) message("  vignettes/: ", nrow(ch), " chunk(s)")
-      all_chunks[[length(all_chunks) + 1L]] <- ch
-    }
-  }
-
-  if (!length(all_chunks)) {
-    if (!quiet) message("No documentation found in ", project_dir)
-    return(invisible(store_path))
-  }
-
-  chunks_df <- do.call(rbind, all_chunks)
-  if (!quiet) message("Inserting ", nrow(chunks_df), " total chunk(s)...")
-
-  ragnar::ragnar_store_insert(store, chunks_df)
-  ragnar::ragnar_store_build_index(store)
-
-  if (!quiet) message("Ragnar store saved: ", store_path)
-  invisible(store_path)
+  invisible(db_path)
 }
 
 
 #' Retrieve documentation chunks from the ragnar store
 #'
-#' Performs hybrid BM25 + vector-similarity search over the ragnar store built
-#' by [explicar_ragnar_build()].  Falls back to BM25-only when no embeddings
-#' are stored.
+#' @description
+#' `r lifecycle::badge("deprecated")`
+#'
+#' This function is deprecated. Use [explicar_semantic_retrieve()] instead,
+#' which queries the unified `.explicar/explicar.duckdb` store.
 #'
 #' @param query Search query string.
 #' @param project_dir Path to the R project directory.  Default `"."`.
 #' @param n Maximum number of results to return.  Default `10L`.
-#' @param bm25_only Force BM25-only search (ignores any stored embeddings).
-#'   Default `FALSE`.
+#' @param bm25_only Force BM25-only search.  Default `FALSE`.
 #'
-#' @return A [tibble][tibble::tibble] with columns `origin`, `text`, `source`,
-#'   `url`, `page_title`, and (when VSS is used) `similarity`.
+#' @return A tibble of matching chunks.
 #' @export
 #'
 #' @examples
 #' \dontrun{
-#' explicar_ragnar_build()
-#' explicar_doc_retrieve("how does pivot_longer work")
-#' explicar_doc_retrieve("filter rows", bm25_only = TRUE)
+#' # Deprecated — use explicar_semantic_retrieve() instead:
+#' explicar_semantic_retrieve("how does the parse dispatch work")
 #' }
 explicar_doc_retrieve <- function(query,
                                    project_dir = ".",
                                    n           = 10L,
                                    bm25_only   = FALSE) {
-  if (!.ragnar_available()) {
-    stop(
-      "The 'ragnar' package is required.\n",
-      "Install with: install.packages('ragnar')",
-      call. = FALSE
+  .Deprecated("explicar_semantic_retrieve",
+    msg = paste0(
+      "explicar_doc_retrieve() is deprecated and will be removed in v1.0.\n",
+      "Use explicar_semantic_retrieve() which queries the unified .explicar/explicar.duckdb store."
     )
-  }
-
-  project_dir <- normalizePath(project_dir, mustWork = TRUE)
-  store_path  <- .ragnar_store_path(project_dir)
-
-  if (!file.exists(store_path)) {
-    stop(
-      "No ragnar doc store found at '", store_path, "'.\n",
-      "Run explicar_ragnar_build() first.",
-      call. = FALSE
-    )
-  }
-
-  store <- ragnar::ragnar_store_connect(store_path)
-
-  if (bm25_only) {
-    return(ragnar::ragnar_retrieve_bm25(store, query, n = as.integer(n)))
-  }
-
-  tryCatch(
-    ragnar::ragnar_retrieve(store, query, n = as.integer(n)),
-    error = function(e) {
-      # Hybrid failed (likely no embeddings) — degrade to BM25
-      ragnar::ragnar_retrieve_bm25(store, query, n = as.integer(n))
-    }
   )
+  explicar_semantic_retrieve(query,
+                             project_dir = project_dir,
+                             top_k       = as.integer(n),
+                             bm25_only   = bm25_only)
 }
 
 
@@ -445,10 +334,14 @@ explicar_register_retrieve <- function(chat, project_dir = ".",
   }
 
   project_dir <- normalizePath(project_dir, mustWork = TRUE)
-  store_path  <- .ragnar_store_path(project_dir)
+  store_path  <- .explicar_db_path(project_dir)
 
   if (!file.exists(store_path)) {
-    stop("No ragnar store found. Run explicar_ragnar_build() first.", call. = FALSE)
+    stop(
+      "No ragnar store found at '", store_path, "'.\n",
+      "Run explicar_ingest() first.",
+      call. = FALSE
+    )
   }
 
   store <- ragnar::ragnar_store_connect(store_path)
@@ -456,8 +349,8 @@ explicar_register_retrieve <- function(chat, project_dir = ".",
   if (is.null(store_description)) {
     pkg_name <- .read_pkg_name(project_dir)
     store_description <- paste0(
-      "Documentation for the R package '", pkg_name, "': ",
-      "function reference (man pages and roxygen comments), README, and vignettes."
+      "Code graph, wiki pages, and documentation for the project '", pkg_name, "': ",
+      "function reference, README, vignettes, and LLM-generated wiki pages."
     )
   }
 
