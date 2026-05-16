@@ -4,9 +4,9 @@
 \name{explicaR-package}
 \alias{explicaR}
 \alias{explicaR-package}
-\title{explicaR: An R DeepWiki — Browse, Search and Chat with Any Codebase}
+\title{explicaR: Auto-Document Any R or Python Project}
 \description{
-Generates a browsable, searchable, LLM-annotated wiki for any R or Python project. Point explicar() at a local directory (or a GitHub URL) to get: one LLM-generated wiki page per source file, an interactive Mermaid dependency graph, a DuckDB-backed code index queryable from Claude Desktop via the Model Context Protocol (MCP), and a self-contained HTML viewer (Tier 1), a WASM SQL browser (Tier 2), or a live chat server (Tier 3). All processing is local; no code leaves the machine unless an external LLM provider is chosen.
+Automatically documents R and Python projects by generating a browsable wiki, an interactive dependency graph, and a searchable code index — with no manual writing required. Projects become queryable from AI assistants such as Claude Desktop via the Model Context Protocol (MCP). All processing is local by default; LLM calls only occur when an explicit provider is supplied.
 }
 \seealso{
 Useful links:
