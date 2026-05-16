@@ -6,10 +6,9 @@
 #' without any server. Requires an internet connection for DuckDB-WASM and
 #' Mermaid CDN assets.
 #'
-#' The viewer exposes three tables:
+#' The viewer exposes two tables:
 #' - **nodes** — `name, type, file, line, label, shape_info`
 #' - **edges** — `from_node, to_node, type`
-#' - **verbs** — `file, line, fn_name, input_var, output_var, pkg`
 #'
 #' @param parse_result Output from [explicar_parse()].
 #' @param title Page title. Defaults to `"explicaR — WASM Viewer"`.
@@ -57,23 +56,9 @@ generate_wasm_viewer <- function(parse_result,
     list(from = e$from, to = e$to, type = e$type)
   })
 
-  # Serialise verbs (drop list-column args — not JSON-serialisable generically)
-  verb_data <- lapply(seq_len(nrow(parse_result$verbs)), function(i) {
-    v <- parse_result$verbs[i, ]
-    list(
-      file       = if (is.na(v$file))       "" else v$file,
-      line       = if (is.na(v$line))       0L else v$line,
-      fn_name    = if (is.na(v$fn_name))    "" else v$fn_name,
-      input_var  = if (is.na(v$input_var))  "" else v$input_var,
-      output_var = if (is.na(v$output_var)) "" else v$output_var,
-      pkg        = if (is.na(v$pkg))        "" else v$pkg
-    )
-  })
-
   stats <- paste0(
-    nrow(parse_result$nodes), " nodes \u00B7 ",
-    nrow(parse_result$edges), " edges \u00B7 ",
-    nrow(parse_result$verbs), " verb calls"
+    nrow(parse_result$nodes), " nodes · ",
+    nrow(parse_result$edges), " edges"
   )
 
   id_map <- .mermaid_id_map(parse_result$nodes)
@@ -91,7 +76,6 @@ generate_wasm_viewer <- function(parse_result,
   html <- gsub("{{MERMAID_GRAPH}}", graph_text,                           html, fixed = TRUE)
   html <- gsub("{{NODE_DATA_JSON}}", jsonlite::toJSON(node_data, auto_unbox = TRUE), html, fixed = TRUE)
   html <- gsub("{{EDGE_DATA_JSON}}", jsonlite::toJSON(edge_data, auto_unbox = TRUE), html, fixed = TRUE)
-  html <- gsub("{{VERB_DATA_JSON}}", jsonlite::toJSON(verb_data, auto_unbox = TRUE), html, fixed = TRUE)
   html <- gsub("{{ID_MAP_JSON}}",    jsonlite::toJSON(id_map,    auto_unbox = TRUE), html, fixed = TRUE)
 
   writeLines(html, output_file)

@@ -196,15 +196,10 @@ deep_research <- function(chat, question, max_iterations = 5L) {
   nodes <- parse_result$nodes
   edges <- parse_result$edges
 
-  # Functions DEFINED here = produced by this script via assignment
-  fns  <- edges[edges$from == script_name & edges$type == "produces", "to", drop = TRUE]
-  fn_nodes <- nodes[nodes$name %in% fns & nodes$type == "function", ]
-  fns  <- fn_nodes$name
-
-  # Variables produced by this script
-  vars <- edges[edges$from == script_name & edges$type == "produces", "to", drop = TRUE]
-  var_nodes <- nodes[nodes$name %in% vars & nodes$type == "variable", ]
-  vars <- var_nodes$name
+  # Objects produced by this script, split by node type
+  produced  <- edges[edges$from == script_name & edges$type == "produces", "to", drop = TRUE]
+  fns  <- nodes[nodes$name %in% produced & nodes$type == "function",  "name", drop = TRUE]
+  vars <- nodes[nodes$name %in% produced & nodes$type == "variable",  "name", drop = TRUE]
 
   # External functions called (not defined here)
   calls_out <- edges[edges$from == script_name & edges$type == "calls", "to",
@@ -414,19 +409,13 @@ deep_research <- function(chat, question, max_iterations = 5L) {
 
 .wiki_is_current <- function(con, file_path, current_mtime) {
   if (!DBI::dbExistsTable(con, "wiki")) return(FALSE)
-  row <- DBI::dbGetQuery(
-    con,
-    sprintf("SELECT last_modified FROM wiki WHERE file = '%s'",
-            gsub("'", "''", file_path))
-  )
+  row <- DBI::dbGetQuery(con,
+    "SELECT last_modified FROM wiki WHERE file = ?", list(file_path))
   nrow(row) > 0L && abs(row$last_modified[[1L]] - current_mtime) < 0.01
 }
 
 .wiki_upsert <- function(con, file_path, model, file_mtime, content) {
-  DBI::dbExecute(
-    con,
-    sprintf("DELETE FROM wiki WHERE file = '%s'", gsub("'", "''", file_path))
-  )
+  DBI::dbExecute(con, "DELETE FROM wiki WHERE file = ?", list(file_path))
   DBI::dbWriteTable(con, "wiki",
     data.frame(file = file_path, model = model,
                generated_at  = as.numeric(Sys.time()),

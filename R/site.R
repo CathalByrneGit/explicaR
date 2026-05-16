@@ -361,11 +361,20 @@ explicar_site_build <- function(parse_result,
 }
 
 .md_inline <- function(text) {
+  # Extract inline code spans before escaping so backtick content isn't double-escaped
+  codes <- list()
+  text <- gsub("`([^`]+)`", function(m) {
+    inner <- sub("^`(.+)`$", "\\1", m)
+    idx   <- length(codes)
+    ph    <- paste0("EXPLICAR_CODE_PH_", idx, "_END")
+    codes[[ph]] <<- paste0("<code>", .html_esc(inner), "</code>")
+    ph
+  }, text, perl = TRUE)
   text <- .html_esc(text)
   text <- gsub("\\*\\*(.+?)\\*\\*", "<strong>\\1</strong>", text)
   text <- gsub("\\*(.+?)\\*",       "<em>\\1</em>",         text)
-  text <- gsub("`([^`]+)`",         "<code>\\1</code>",     text)
   text <- gsub("\\[([^]]+)\\]\\(([^)]+)\\)", '<a href="\\2">\\1</a>', text)
+  for (ph in names(codes)) text <- gsub(ph, codes[[ph]], text, fixed = TRUE)
   text
 }
 

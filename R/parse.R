@@ -86,11 +86,9 @@ explicar_parse <- function(project_dir = ".",
 
   result <- .merge_parse_results(r_result, py_result)
 
-  # Roxygen enrichment — only on package source files (inside R/).
-  # roxygen2::parse_file() sources the file to inspect objects, so we must
-  # never pass example scripts, tests, or other executable non-source files.
-  roxy_candidates <- r_scripts[grepl("[/\\\\]R[/\\\\][^/\\\\]+\\.R$", r_scripts)]
-  roxy_labels <- purrr::map_dfr(roxy_candidates, .extract_roxygen)
+  # Roxygen enrichment — try all R scripts; .extract_roxygen() returns an
+  # empty tibble for files with no #' blocks, so non-package layouts are safe.
+  roxy_labels <- purrr::map_dfr(r_scripts, .extract_roxygen)
   result$nodes <- .merge_roxygen(result$nodes, roxy_labels)
 
   # Raw data source file references (R files only — Python imports handled above)
@@ -105,7 +103,10 @@ explicar_parse <- function(project_dir = ".",
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 .auto_dispatch <- function(scripts) {
-  result <- tryCatch(.parse_treesitter(scripts), error = function(e) NULL)
+  result <- tryCatch(.parse_treesitter(scripts), error = function(e) {
+    message("treesitter parse failed (", conditionMessage(e), ") — falling back to R parser")
+    NULL
+  })
   if (!is.null(result)) return(result)
   .parse_r_fallback(scripts)
 }

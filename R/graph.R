@@ -134,11 +134,14 @@ explicar_graph <- function(parse_result,
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-#' Sanitise a node name to a valid Mermaid identifier
+#' Sanitise a node name to a collision-resistant Mermaid identifier
 #' @noRd
 .mermaid_id <- function(x) {
-  id <- gsub("[^A-Za-z0-9]", "_", x)
-  # Mermaid IDs must start with a letter; prefix with 'n' if they don't
+  # Replace non-alphanumeric chars then append a short hash to prevent
+  # collisions between names that differ only in punctuation (e.g. foo-bar / foo_bar)
+  base <- gsub("[^A-Za-z0-9]", "_", x)
+  hash <- substr(vapply(x, rlang::hash, character(1L)), 1L, 6L)
+  id   <- paste0(base, "_", hash)
   ifelse(grepl("^[A-Za-z]", id), id, paste0("n", id))
 }
 

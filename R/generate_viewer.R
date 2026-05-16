@@ -1,14 +1,12 @@
 #' Generate a self-contained HTML pipeline viewer
 #'
-#' Combines the Mermaid pipeline graph, verb-level before/after tables,
-#' node metadata, and optionally LLM wiki pages into a single HTML file
-#' that works offline (except for the Mermaid.js CDN request).
+#' Combines the Mermaid pipeline graph, node metadata, and optionally LLM
+#' wiki pages into a single HTML file that works offline (except for the
+#' Mermaid.js CDN request).
 #'
 #' @param parse_result Output from [explicar_parse()].
 #' @param title Page title. Defaults to `"explicaR — <project>"`.
 #' @param output_file Path for the output HTML file.
-#' @param snapshots Optional named list of intermediate dataframes (for
-#'   before/after tables). When `NULL`, illustrative data is used.
 #' @param wiki_data Named list of `file → wiki_markdown` strings.  When
 #'   provided (e.g. from [explicar_wiki_build()]), clicking a script node
 #'   shows its wiki page in the detail panel.  Default `NULL`.
@@ -27,7 +25,6 @@
 generate_viewer <- function(parse_result,
                             title       = NULL,
                             output_file = "explicar_viewer.html",
-                            snapshots   = NULL,
                             wiki_data   = NULL,
                             direction   = "TD",
                             open        = TRUE,
@@ -38,15 +35,6 @@ generate_viewer <- function(parse_result,
 
   if (!quiet) message("explicaR: building Mermaid graph")
   graph_text <- explicar_graph(parse_result, direction = direction)
-
-  if (!quiet) message("explicaR: building verb panels")
-  animations <- tryCatch(
-    explicar_animate(parse_result, snapshots = snapshots),
-    error = function(e) list()
-  )
-  anim_html <- purrr::imap(animations, function(a, key) {
-    tryCatch(as.character(a$widget), error = function(e) "")
-  })
 
   # Node metadata for JS lookup
   node_data <- lapply(seq_len(nrow(parse_result$nodes)), function(i) {
@@ -63,8 +51,7 @@ generate_viewer <- function(parse_result,
 
   stats <- paste0(
     nrow(parse_result$nodes), " nodes \u00B7 ",
-    nrow(parse_result$edges), " edges \u00B7 ",
-    nrow(parse_result$verbs), " verb calls"
+    nrow(parse_result$edges), " edges"
   )
 
   id_map <- .mermaid_id_map(parse_result$nodes)
@@ -80,7 +67,6 @@ generate_viewer <- function(parse_result,
   html <- gsub("{{STATS}}",          .html_esc(stats),                    html, fixed = TRUE)
   html <- gsub("{{GENERATED_AT}}",   format(Sys.time(), "%Y-%m-%d %H:%M"), html, fixed = TRUE)
   html <- gsub("{{MERMAID_GRAPH}}",  graph_text,                           html, fixed = TRUE)
-  html <- gsub("{{VERB_DATA_JSON}}", jsonlite::toJSON(anim_html,  auto_unbox = TRUE), html, fixed = TRUE)
   html <- gsub("{{NODE_DATA_JSON}}", jsonlite::toJSON(node_data,  auto_unbox = TRUE), html, fixed = TRUE)
   html <- gsub("{{ID_MAP_JSON}}",    jsonlite::toJSON(id_map,     auto_unbox = TRUE), html, fixed = TRUE)
   html <- gsub("{{WIKI_DATA_JSON}}", jsonlite::toJSON(wiki_data,  auto_unbox = TRUE), html, fixed = TRUE)

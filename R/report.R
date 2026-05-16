@@ -20,8 +20,6 @@
 #' @param update Logical; run `git pull` if a cached clone already exists.
 #'   Set `FALSE` to use the cached version without fetching.  Default `TRUE`.
 #' @param languages Languages to parse: `c("r")` (default), `c("r","python")`.
-#' @param snapshots Optional named list of intermediate dataframes (from
-#'   [with_pipeline_trace()] or [explicar_targets()]).
 #' @param llm Logical; generate LLM wiki pages (requires ellmer + Ollama or
 #'   an explicit `llm_chat`). Default `FALSE`.
 #' @param llm_chat An `ellmer::Chat` object.  When supplied and `llm = TRUE`
@@ -72,7 +70,6 @@ explicar <- function(project_dir  = ".",
                      title        = NULL,
                      pkg_name     = NULL,
                      languages    = "r",
-                     snapshots    = NULL,
                      llm          = FALSE,
                      llm_chat     = NULL,
                      enrich       = FALSE,
@@ -121,13 +118,10 @@ explicar <- function(project_dir  = ".",
     parse_result <- explicar_parse(project_dir, languages = languages)
     parse_result$nodes <- tnet$nodes
     parse_result$edges <- tnet$edges
-    if (is.null(snapshots)) snapshots <- shapes_from_targets(project_dir)
+    shapes <- shapes_from_targets(project_dir)
+    if (length(shapes) > 0L) parse_result <- attach_shapes(parse_result, shapes)
   } else {
     parse_result <- explicar_parse(project_dir, languages = languages)
-  }
-
-  if (!is.null(snapshots) && length(snapshots) > 0L) {
-    parse_result <- attach_shapes(parse_result, snapshots)
   }
 
   if (enrich) {
@@ -190,7 +184,6 @@ explicar <- function(project_dir  = ".",
     parse_result = parse_result,
     title        = title,
     output_file  = output_file,
-    snapshots    = snapshots,
     wiki_data    = wiki_data,
     direction    = direction,
     open         = open,

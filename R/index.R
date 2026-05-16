@@ -93,11 +93,9 @@ explicar_index_build <- function(project_dir = ".",
   # Only insert nodes/verbs for stale files; replace all edges (graph topology)
   nodes <- dplyr::filter(parse_result$nodes,
                          is.na(.data$file) | .data$file %in% stale)
-  verbs <- dplyr::filter(parse_result$verbs, .data$file %in% stale)
 
   .insert_nodes(con, nodes)
   .replace_edges(con, parse_result$edges)
-  .insert_verbs(con, verbs)
   .update_mtimes(con, stale)
   .upsert_functions(con, nodes)   # populate spec's `functions` table
 
@@ -258,17 +256,6 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
   ")
 
   DBI::dbExecute(con, "
-    CREATE TABLE IF NOT EXISTS verbs (
-      file       VARCHAR,
-      line       INTEGER,
-      fn_name    VARCHAR,
-      input_var  VARCHAR,
-      output_var VARCHAR,
-      pkg        VARCHAR
-    )
-  ")
-
-  DBI::dbExecute(con, "
     CREATE TABLE IF NOT EXISTS file_mtimes (
       file  VARCHAR PRIMARY KEY,
       mtime DOUBLE
@@ -392,11 +379,11 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
 
 .remove_file_entries <- function(con, files) {
   if (length(files) == 0L) return(invisible())
-  quoted <- paste0("'", gsub("'", "''", files), "'", collapse = ", ")
-  DBI::dbExecute(con, paste0("DELETE FROM nodes       WHERE file IN (", quoted, ")"))
-  DBI::dbExecute(con, paste0("DELETE FROM verbs       WHERE file IN (", quoted, ")"))
-  DBI::dbExecute(con, paste0("DELETE FROM functions   WHERE file IN (", quoted, ")"))
-  DBI::dbExecute(con, paste0("DELETE FROM file_mtimes WHERE file IN (", quoted, ")"))
+  for (f in files) {
+    DBI::dbExecute(con, "DELETE FROM nodes       WHERE file = ?", list(f))
+    DBI::dbExecute(con, "DELETE FROM functions   WHERE file = ?", list(f))
+    DBI::dbExecute(con, "DELETE FROM file_mtimes WHERE file = ?", list(f))
+  }
   invisible()
 }
 
@@ -426,30 +413,11 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
   DBI::dbWriteTable(con, "edges", df, append = TRUE)
 }
 
-.insert_verbs <- function(con, verbs) {
-  if (nrow(verbs) == 0L) return(invisible())
-  # Drop the list-column 'args' — not DuckDB-serialisable without extra work
-  df <- data.frame(
-    file       = as.character(verbs$file),
-    line       = as.integer(verbs$line),
-    fn_name    = as.character(verbs$fn_name),
-    input_var  = as.character(verbs$input_var),
-    output_var = as.character(verbs$output_var),
-    pkg        = as.character(verbs$pkg),
-    stringsAsFactors = FALSE
-  )
-  DBI::dbWriteTable(con, "verbs", df, append = TRUE)
-}
-
 .update_mtimes <- function(con, files) {
   if (length(files) == 0L) return(invisible())
-  df <- data.frame(
-    file  = files,
-    mtime = as.numeric(file.info(files)$mtime),
-    stringsAsFactors = FALSE
-  )
-  quoted <- paste0("'", gsub("'", "''", files), "'", collapse = ", ")
-  DBI::dbExecute(con, paste0("DELETE FROM file_mtimes WHERE file IN (", quoted, ")"))
+  for (f in files) DBI::dbExecute(con, "DELETE FROM file_mtimes WHERE file = ?", list(f))
+  df <- data.frame(file = files, mtime = as.numeric(file.info(files)$mtime),
+                   stringsAsFactors = FALSE)
   DBI::dbWriteTable(con, "file_mtimes", df, append = TRUE)
 }
 
@@ -562,15 +530,15 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
 }
 
 .keyword_search <- function(con, query, top_k, type) {
-  like_pat <- paste0("%", gsub("'", "''", query), "%")
+  like_pat <- paste0("%", query, "%")
+  type_filter <- if (!is.null(type)) " AND type = ?" else ""
   sql <- paste0(
     "SELECT name, type, file, line, label, shape_info FROM nodes",
-    " WHERE (name ILIKE '", like_pat, "' OR label ILIKE '", like_pat, "')",
-    .type_clause(type),
-    " ORDER BY length(name) ASC",   # shorter names first as proxy for relevance
-    " LIMIT ", as.integer(top_k)
+    " WHERE (name ILIKE ? OR label ILIKE ?)", type_filter,
+    " ORDER BY length(name) ASC LIMIT ", as.integer(top_k)
   )
-  tibble::as_tibble(DBI::dbGetQuery(con, sql))
+  params <- if (!is.null(type)) list(like_pat, like_pat, type) else list(like_pat, like_pat)
+  tibble::as_tibble(DBI::dbGetQuery(con, sql, params = params))
 }
 
 .vector_search <- function(con, query_vec, top_k, type) {

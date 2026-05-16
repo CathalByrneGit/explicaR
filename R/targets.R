@@ -2,7 +2,7 @@
 #'
 #' Soft-depends on the `{targets}` package. When a project uses targets,
 #' this module reads cached intermediate objects and returns them as a named
-#' list that can be passed to [attach_shapes()] or the animation layer.
+#' list that can be passed to [attach_shapes()].
 #'
 #' @param project_dir Path to the project directory (must contain a
 #'   `_targets/` subdirectory or a `_targets.yaml` config file).

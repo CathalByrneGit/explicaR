@@ -155,8 +155,7 @@ explicar_ingest <- function(project_dir = ".",
     if (!force && !is.null(wiki_con)) {
       stored <- tryCatch(
         DBI::dbGetQuery(wiki_con,
-          sprintf("SELECT last_modified FROM wiki WHERE file = '%s'",
-                  gsub("'", "''", md_path))),
+          "SELECT last_modified FROM wiki WHERE file = ?", list(md_path)),
         error = function(e) data.frame()
       )
       if (nrow(stored) > 0L && abs(stored$last_modified[[1L]] - file_mtime) < 0.01) {
@@ -172,9 +171,7 @@ explicar_ingest <- function(project_dir = ".",
 
     # Remove stale ragnar chunks for this file before re-inserting
     tryCatch(
-      DBI::dbExecute(store@con,
-        sprintf("DELETE FROM chunks WHERE source = '%s'",
-                gsub("'", "''", source_id))),
+      DBI::dbExecute(store@con, "DELETE FROM chunks WHERE source = ?", list(source_id)),
       error = function(e) invisible()
     )
 
@@ -190,8 +187,7 @@ explicar_ingest <- function(project_dir = ".",
     # Sync mtime back to wiki table so next call can skip unchanged files
     if (!is.null(wiki_con)) {
       tryCatch({
-        DBI::dbExecute(wiki_con,
-          sprintf("DELETE FROM wiki WHERE file = '%s'", gsub("'", "''", md_path)))
+        DBI::dbExecute(wiki_con, "DELETE FROM wiki WHERE file = ?", list(md_path))
         DBI::dbWriteTable(wiki_con, "wiki",
           data.frame(file = md_path, model = "file",
                      generated_at  = as.numeric(Sys.time()),

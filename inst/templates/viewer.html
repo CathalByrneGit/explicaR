@@ -180,58 +180,6 @@
     .ex-badge-fn       { background: var(--orange); color: #000; }
     .ex-badge-source   { background: var(--purple); color: #fff; }
 
-    /* ── Animation / before-after tables (from animate.R) ── */
-    .explicar-animation { padding: .25rem 0; }
-    .explicar-verb-title {
-      font-size: .95rem;
-      font-weight: 700;
-      margin-bottom: .6rem;
-    }
-    .explicar-before-after {
-      display: flex;
-      gap: .75rem;
-      flex-wrap: wrap;
-      align-items: flex-start;
-    }
-    .explicar-before, .explicar-after { flex: 1 1 240px; }
-    .explicar-arrow {
-      font-size: 1.6rem;
-      color: var(--blue);
-      align-self: center;
-      flex: 0 0 auto;
-    }
-    .explicar-caption {
-      font-weight: 700;
-      font-size: .82rem;
-      margin-bottom: .2rem;
-    }
-    .explicar-table {
-      border-collapse: collapse;
-      font-size: .78rem;
-      width: 100%;
-    }
-    .explicar-table th,
-    .explicar-table td {
-      border: 1px solid var(--border);
-      padding: .2rem .45rem;
-      text-align: left;
-      white-space: nowrap;
-      max-width: 140px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .explicar-table thead { background: #e9ecef; font-weight: 700; }
-    .explicar-truncated {
-      font-size: .72rem;
-      color: var(--muted);
-      margin-top: .2rem;
-    }
-    .explicar-no-data {
-      font-size: .8rem;
-      color: #aaa;
-      font-style: italic;
-    }
-
     /* ── Footer ── */
     .ex-footer {
       flex: 0 0 auto;
@@ -353,7 +301,6 @@
 </footer>
 
 <!-- Embedded data -->
-<script type="application/json" id="ex-verb-data">{{VERB_DATA_JSON}}</script>
 <script type="application/json" id="ex-node-data">{{NODE_DATA_JSON}}</script>
 <script type="application/json" id="ex-id-map">{{ID_MAP_JSON}}</script>
 <script type="application/json" id="ex-wiki-data">{{WIKI_DATA_JSON}}</script>
@@ -372,7 +319,6 @@
     try { return JSON.parse(el.textContent); } catch (e) { return {}; }
   }
 
-  var verbData = loadJSON("ex-verb-data");   // { "filter@clean.R:5": "<html>" }
   var nodeData = loadJSON("ex-node-data");   // [ { name, type, file, line, ... } ]
   var idMap    = loadJSON("ex-id-map");      // { "Mermaid_id": "original name" }
   var wikiData = loadJSON("ex-wiki-data");   // { "/path/to/file.R": "markdown..." }
@@ -412,12 +358,7 @@
   };
 
   function showDetail(name, node) {
-    var titleEl  = document.getElementById("ex-detail-title");
-    var wrapEl   = document.getElementById("ex-detail-wrap");
-
-    titleEl.textContent = name;
-
-    // Node metadata card
+    var wrapEl = document.getElementById("ex-detail-wrap");
     var badgeClass = {
       script: "ex-badge-script",
       variable: "ex-badge-variable",
@@ -437,25 +378,7 @@
     if (node.shape_info) metaHtml += 'Shape: ' + esc(node.shape_info) + '<br>';
 
     metaHtml += '  </div></div>';
-
-    // Verb animation HTML (if any key starts with the node name)
-    var verbHtml = "";
-    Object.keys(verbData).forEach(function (key) {
-      if (key.indexOf(name) !== -1) {
-        verbHtml += verbData[key] || "";
-      }
-    });
-
-    wrapEl.innerHTML = metaHtml + (verbHtml || '<p class="ex-hint">No verb details for this node.</p>');
-
-    // Re-execute any embedded <script> tags (from htmltools widgets)
-    Array.from(wrapEl.querySelectorAll("script")).forEach(function (old) {
-      var fresh = document.createElement("script");
-      if (old.src) { fresh.src = old.src; }
-      else { fresh.textContent = old.textContent; }
-      old.parentNode.replaceChild(fresh, old);
-    });
-
+    wrapEl.innerHTML = metaHtml;
     wrapEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
