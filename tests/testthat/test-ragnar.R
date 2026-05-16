@@ -76,7 +76,7 @@ test_that("explicar_ragnar_build indexes README chunks", {
 
   explicar_ragnar_build(proj, include = "readme", embed = FALSE, quiet = TRUE)
   store <- ragnar::ragnar_store_connect(explicaR:::.ragnar_store_path(proj))
-  rows  <- DBI::dbGetQuery(store$con,
+  rows  <- DBI::dbGetQuery(store@con,
     "SELECT * FROM chunks WHERE page_title = 'README'")
   expect_true(nrow(rows) >= 1L)
   expect_true(all(rows$source == "local:testpkg"))
@@ -88,7 +88,7 @@ test_that("explicar_ragnar_build indexes roxygen source chunks", {
 
   explicar_ragnar_build(proj, include = "source", embed = FALSE, quiet = TRUE)
   store <- ragnar::ragnar_store_connect(explicaR:::.ragnar_store_path(proj))
-  rows  <- DBI::dbGetQuery(store$con,
+  rows  <- DBI::dbGetQuery(store@con,
     "SELECT * FROM chunks WHERE text LIKE '%my_mean%'")
   expect_true(nrow(rows) >= 1L)
 })

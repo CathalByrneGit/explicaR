@@ -219,7 +219,7 @@ explicar_ingest <- function(project_dir = ".",
     ragnar::ragnar_store_connect(db_path, read_only = FALSE),
     error = function(e) {
       tryCatch(
-        ragnar::ragnar_store_create(db_path, embed = embed_fn),
+        ragnar::ragnar_store_create(db_path, embed = embed_fn, version = 1L),
         error = function(e2) NULL
       )
     }

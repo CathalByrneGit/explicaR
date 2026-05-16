@@ -59,15 +59,12 @@ explicar_embed <- function(project_dir = ".",
 
   if (!dir.exists(dirname(db_path))) dir.create(dirname(db_path), recursive = TRUE)
 
-  # Build the ragnar embedding function — bail early if Ollama is down
-  embed_fn <- tryCatch(
-    ragnar::embed_ollama(model = model, base_url = ollama_url),
-    error = function(e) NULL
-  )
-  if (is.null(embed_fn)) {
+  # Bail early if Ollama is not reachable
+  if (!ollama_available(model, ollama_url)) {
     if (!quiet) message("explicaR: Ollama unavailable — skipping vector embeddings")
     return(invisible(0L))
   }
+  embed_fn <- ragnar::embed_ollama(model = model, base_url = ollama_url)
 
   store <- .ragnar_connect_or_create(db_path, embed_fn)
   if (is.null(store)) {
@@ -243,14 +240,17 @@ explicar_semantic_retrieve <- function(query,
   )
 
   out  <- paste0(type_lbl, ": `", nd$name, "`")
-  lbl  <- as.character(nd$label %||% "")
-  name <- as.character(nd$name  %||% "")
+  lbl_raw <- nd$label %||% NA_character_
+  lbl  <- if (is.na(lbl_raw)) "" else as.character(lbl_raw)
+  name_raw <- nd$name %||% NA_character_
+  name <- if (is.na(name_raw)) "" else as.character(name_raw)
 
   if (nzchar(lbl) && lbl != name) {
     out <- paste0(out, " — ", lbl)
   }
 
-  file <- as.character(nd$file %||% "")
+  file_raw <- nd$file %||% NA_character_
+  file <- if (is.na(file_raw)) "" else as.character(file_raw)
   if (nzchar(file)) {
     line <- nd$line
     loc  <- if (!is.null(line) && !is.na(line) && line > 0L) {

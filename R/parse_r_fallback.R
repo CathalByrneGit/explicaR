@@ -31,13 +31,32 @@
       assigns <- pd[pd$token == "LEFT_ASSIGN", ]
       outputs <- character(0L)
       for (i in seq_len(nrow(assigns))) {
-        parent_id <- assigns$parent[i]
-        lhs <- pd[pd$parent == parent_id & pd$token == "SYMBOL", ]
+        parent_id  <- assigns$parent[i]
+        assign_col <- assigns$col1[i]
+
+        # The LHS symbol is inside an expr sibling that precedes LEFT_ASSIGN
+        lhs_exprs <- pd[pd$parent == parent_id & pd$token == "expr" &
+                          pd$col2 < assign_col, , drop = FALSE]
+        lhs <- if (nrow(lhs_exprs) > 0L) {
+          lhs_id <- lhs_exprs$id[nrow(lhs_exprs)]
+          pd[pd$parent == lhs_id & pd$token == "SYMBOL", , drop = FALSE]
+        } else {
+          pd[pd$parent == parent_id & pd$token == "SYMBOL", , drop = FALSE]
+        }
+
         if (nrow(lhs) > 0L) {
           varname <- lhs$text[1L]
           outputs <- c(outputs, varname)
+
+          # Detect function definitions: RHS expr directly contains FUNCTION token
+          rhs_exprs <- pd[pd$parent == parent_id & pd$token == "expr" &
+                            pd$col1 > assign_col, , drop = FALSE]
+          is_fn_def <- nrow(rhs_exprs) > 0L &&
+            any(pd$parent == rhs_exprs$id[1L] & pd$token == "FUNCTION")
+          node_type <- if (is_fn_def) "function" else "variable"
+
           all_nodes[[length(all_nodes) + 1L]] <- tibble::tibble(
-            name = varname, type = "variable", file = script,
+            name = varname, type = node_type, file = script,
             line = assigns$line1[i], label = varname, shape_info = NA_character_
           )
           all_edges[[length(all_edges) + 1L]] <- tibble::tibble(

@@ -260,29 +260,24 @@ explicar_ragnar_build <- function(project_dir = ".",
   }
 
   # Create or open store
-  if (force && file.exists(store_path)) {
-    unlink(store_path)
-    if (!quiet) message("Removed existing ragnar store.")
-  }
-
-  if (file.exists(store_path)) {
+  if (file.exists(store_path) && !force) {
     store <- ragnar::ragnar_store_connect(store_path)
 
     # Check whether this source is already indexed
     n_existing <- tryCatch(
-      nrow(DBI::dbGetQuery(store$con,
+      nrow(DBI::dbGetQuery(store@con,
         paste0("SELECT 1 FROM chunks WHERE origin LIKE '",
                gsub("'", "''", source_id), "%' LIMIT 1"))),
       error = function(e) 0L
     )
-    if (n_existing > 0L && !force) {
+    if (n_existing > 0L) {
       if (!quiet) message("already indexed (", source_id, "). Use force = TRUE to rebuild.")
       return(invisible(store_path))
     }
 
     # Remove stale rows for this source before re-inserting
     tryCatch(
-      DBI::dbExecute(store$con,
+      DBI::dbExecute(store@con,
         paste0("DELETE FROM chunks WHERE origin LIKE '",
                gsub("'", "''", source_id), "%'")),
       error = function(e) invisible(NULL)
@@ -291,9 +286,12 @@ explicar_ragnar_build <- function(project_dir = ".",
     store <- ragnar::ragnar_store_create(
       location   = store_path,
       embed      = embed_fn,
+      version    = 1L,
+      overwrite  = force && file.exists(store_path),
       extra_cols = data.frame(source = character(), url = character(),
                               page_title = character())
     )
+    if (!quiet && force) message("Removed existing ragnar store.")
   }
 
   if (!quiet) message("Building ragnar doc store for ", pkg_name, "...")
@@ -349,6 +347,7 @@ explicar_ragnar_build <- function(project_dir = ".",
   if (!quiet) message("Inserting ", nrow(chunks_df), " total chunk(s)...")
 
   ragnar::ragnar_store_insert(store, chunks_df)
+  ragnar::ragnar_store_build_index(store)
 
   if (!quiet) message("Ragnar store saved: ", store_path)
   invisible(store_path)

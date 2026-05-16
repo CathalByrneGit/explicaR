@@ -91,10 +91,9 @@ explicar_index_build <- function(project_dir = ".",
                                  recursive = recursive)
 
   # Only insert nodes/verbs for stale files; replace all edges (graph topology)
-  stale_rel <- .rel(stale, project_dir)
   nodes <- dplyr::filter(parse_result$nodes,
-                         is.na(.data$file) | .data$file %in% stale_rel)
-  verbs <- dplyr::filter(parse_result$verbs, .data$file %in% stale_rel)
+                         is.na(.data$file) | .data$file %in% stale)
+  verbs <- dplyr::filter(parse_result$verbs, .data$file %in% stale)
 
   .insert_nodes(con, nodes)
   .replace_edges(con, parse_result$edges)
