@@ -514,6 +514,7 @@
     var label    = document.getElementById("ex-zoom-label");
 
     var tx = 0, ty = 0, scale = 1;
+    var naturalW = 0, naturalH = 0;
 
     function applyTransform() {
       stage.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + scale + ")";
@@ -521,24 +522,30 @@
     }
 
     function fitToViewport() {
-      var svg = stage.querySelector("svg");
-      if (!svg) return;
+      if (!naturalW || !naturalH) return;
       var vw = viewport.clientWidth, vh = viewport.clientHeight;
-      var sw = svg.getBBox ? svg.getBBox().width  : svg.clientWidth;
-      var sh = svg.getBBox ? svg.getBBox().height : svg.clientHeight;
-      if (!sw || !sh) { sw = svg.scrollWidth; sh = svg.scrollHeight; }
-      scale = Math.min(vw / sw, vh / sh) * 0.92;
-      tx = (vw - sw * scale) / 2;
-      ty = (vh - sh * scale) / 2;
+      scale = Math.min(vw / naturalW, vh / naturalH) * 0.92;
+      tx = (vw - naturalW * scale) / 2;
+      ty = (vh - naturalH * scale) / 2;
       applyTransform();
     }
 
     function openModal() {
-      // Clone the rendered SVG into the stage
       var src = document.querySelector("#ex-graph svg");
       if (!src) return;
+      // Capture pixel dimensions before cloning (getBBox uses internal coords)
+      var srcRect = src.getBoundingClientRect();
+      naturalW = srcRect.width;
+      naturalH = srcRect.height;
       stage.innerHTML = "";
-      stage.appendChild(src.cloneNode(true));
+      var clone = src.cloneNode(true);
+      // Pin explicit px dimensions so width:100% doesn't stretch to fill viewport
+      clone.setAttribute("width", naturalW);
+      clone.setAttribute("height", naturalH);
+      clone.style.width = naturalW + "px";
+      clone.style.height = naturalH + "px";
+      clone.style.maxWidth = "none";
+      stage.appendChild(clone);
       // Re-attach click handlers on cloned nodes
       stage.querySelectorAll("[id]").forEach(function (el) {
         var oid = el.getAttribute("data-mermaid-id") || el.id;
