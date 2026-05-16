@@ -1,10 +1,12 @@
 # explicaR — LLM-readable API reference
 # https://github.com/CathalByrneGit/explicaR
 #
-# explicaR makes R (and Python) data pipelines interpretable and visual.
-# It parses multi-script projects, builds a Mermaid dependency DAG, generates
-# before/after data tables for dplyr/tidyr verbs, and writes a self-contained
-# HTML viewer. All processing is local; no code leaves the machine.
+# explicaR is an R DeepWiki: point at any R or Python project (or a GitHub URL)
+# and get a browsable, searchable, LLM-annotated wiki — one page per source file,
+# an interactive Mermaid dependency graph, a DuckDB-backed code index, a ragnar
+# RAG store, and a stdio MCP server for Claude Desktop / Claude Code.
+# Three output tiers: static file:// HTML (Tier 1), WASM SQL browser (Tier 2),
+# live httpuv server with chat (Tier 3). All processing is local.
 
 ## Quick start
 
@@ -129,6 +131,25 @@ explicar_ingest(
 ```
 Ingests wiki pages + docs into the ragnar RAG store (same DuckDB file).
 Builds BM25 + optional VSS index. Requires ragnar package.
+
+### serve_explicar_mcp
+```
+serve_explicar_mcp(
+  project_dir = ".",
+  db_path     = NULL
+) -> invisible()  [blocks on stdin]
+```
+stdio MCP server (JSON-RPC 2.0, MCP 2024-11-05).
+Tools: search_code, query_graph (SELECT SQL), get_wiki, list_files.
+Add to claude_desktop_config.json under mcpServers.
+
+### resolve_project
+```
+resolve_project(project_dir) -> character(1)
+```
+Normalises a local path or remote URL to a local directory.
+Remote repos cloned to ~/.explicar/repos/<host>/<owner>/<repo>/.
+Subsequent calls run git pull. Uses git2r (preferred) or system git.
 
 ### explicar_llms_txt
 ```

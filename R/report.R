@@ -75,7 +75,12 @@ explicar <- function(project_dir  = ".",
   if (!is.null(project_path)) project_dir <- project_path
   if (!is.null(pkg_name) && is.null(title)) title <- pkg_name
 
-  project_dir <- normalizePath(project_dir, mustWork = TRUE)
+  # Resolve remote URLs → local clone
+  project_dir <- if (.is_remote_url(project_dir)) {
+    resolve_project(project_dir)
+  } else {
+    normalizePath(project_dir, mustWork = TRUE)
+  }
 
   if (is.null(title)) {
     title <- paste0("explicaR — ", basename(project_dir))

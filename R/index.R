@@ -273,6 +273,46 @@ explicar_index_connect <- function(project_dir = ".", read_only = TRUE) {
     )
   ")
 
+  # ── AGENTS.md v0.3+ schema additions ──────────────────────────────────────
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS files (
+      path          VARCHAR PRIMARY KEY,
+      language      VARCHAR,
+      lines         INTEGER,
+      last_modified DOUBLE,
+      description   VARCHAR
+    )
+  ")
+
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS functions (
+      name      VARCHAR,
+      file      VARCHAR,
+      line      INTEGER,
+      language  VARCHAR,
+      exported  BOOLEAN,
+      signature VARCHAR,
+      description VARCHAR
+    )
+  ")
+
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS wiki (
+      file          VARCHAR PRIMARY KEY,
+      model         VARCHAR,
+      generated_at  DOUBLE,
+      last_modified DOUBLE,
+      content       TEXT
+    )
+  ")
+
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS _meta (
+      key   VARCHAR PRIMARY KEY,
+      value VARCHAR
+    )
+  ")
+
   invisible(con)
 }
 

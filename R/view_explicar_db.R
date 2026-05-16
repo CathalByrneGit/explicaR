@@ -146,6 +146,31 @@ view_explicar_db <- function(project_dir = ".",
         response <- tryCatch(llm_chat$chat(msg), error = function(e) paste("Error:", conditionMessage(e)))
         .srv_json(list(response = response))
 
+      } else if (path == "/chat/stream" && method == "GET") {
+        # SSE streaming endpoint — client opens EventSource("/chat/stream?message=...")
+        if (is.null(llm_chat)) {
+          return(list(status = 400L,
+                      headers = list("Content-Type" = "text/plain"),
+                      body = "No LLM configured"))
+        }
+        qs  <- req$QUERY_STRING %||% ""
+        msg <- tryCatch(
+          URLdecode(sub(".*[?&]message=([^&]*).*", "\\1", qs)),
+          error = function(e) ""
+        )
+        response <- tryCatch(llm_chat$chat(msg), error = function(e) paste("Error:", conditionMessage(e)))
+        sse_body <- paste0(
+          "data: ", jsonlite::toJSON(list(chunk = response), auto_unbox = TRUE), "\n\n",
+          "data: [DONE]\n\n"
+        )
+        list(status = 200L,
+             headers = list(
+               "Content-Type"                = "text/event-stream",
+               "Cache-Control"               = "no-cache",
+               "Access-Control-Allow-Origin" = "*"
+             ),
+             body = sse_body)
+
       } else {
         list(status = 404L,
              headers = list("Content-Type" = "text/plain"),
