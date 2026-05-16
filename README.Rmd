@@ -4,7 +4,13 @@ output: github_document
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  eval      = FALSE
+)
+```
 
 # explicaR
 
@@ -36,8 +42,7 @@ Everything runs locally. No code leaves your machine unless you choose a cloud L
 
 ## Quick start
 
-
-``` r
+```{r quickstart}
 library(explicaR)
 
 # Static HTML viewer — no server, works offline
@@ -62,8 +67,7 @@ Any [ellmer](https://ellmer.tidyverse.org) provider works: Ollama, OpenAI, Anthr
 
 Make your codebase queryable from Claude without copying and pasting code:
 
-
-``` r
+```{r mcp}
 # Build the index once
 explicar_index_build("path/to/project")
 ```
@@ -87,8 +91,7 @@ Claude can then search your code, run SQL on the graph, read wiki pages, and lis
 
 ## Build the wiki and search it
 
-
-``` r
+```{r wiki-and-search}
 library(ellmer)
 
 # Generate wiki pages (stored in .explicar/explicar.duckdb)
