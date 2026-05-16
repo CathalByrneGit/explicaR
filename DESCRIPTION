@@ -25,7 +25,6 @@ Imports:
     treesitter,
     treesitter.r
 Suggests:
-    targets,
     roxygen2,
     httr2,
     treesitter.python,

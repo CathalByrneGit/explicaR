@@ -108,15 +108,7 @@ explicar <- function(project_dir  = ".",
 
   message("explicaR: parsing ", project_dir)
 
-  if (targets_available(project_dir)) {
-    message("explicaR: targets cache detected")
-    tnet         <- targets_network(project_dir)
-    parse_result <- explicar_parse(project_dir, languages = languages)
-    parse_result$nodes <- tnet$nodes
-    parse_result$edges <- tnet$edges
-  } else {
-    parse_result <- explicar_parse(project_dir, languages = languages)
-  }
+  parse_result <- explicar_parse(project_dir, languages = languages)
 
   # ── LLM wiki generation ────────────────────────────────────────────────────
   do_wiki <- isTRUE(llm) || !is.null(llm_chat)

@@ -235,19 +235,9 @@ explicar(
   db_extensions = FALSE
 ) -> invisible(output_file)
 ```
-Main entry point. Orchestrates: parse → targets detection → optional LLM
+Main entry point. Orchestrates: parse → optional LLM
 wiki build → ragnar ingest → generate_viewer.
 New params: languages, llm, llm_chat, embed, ingest, output_dir, pkg_name.
-
-## targets integration
-
-```
-targets_available(project_dir, store) -> logical
-targets_network(project_dir, store, script, outdated) -> list(nodes, edges, manifest)
-targets_manifest(project_dir, store) -> tibble
-```
-`targets_network()` reads `tar_network()` topology and `tar_manifest()`
-descriptions. Works when `_targets/` cache exists. No re-execution required.
 
 ## Deprecated wrappers — index.duckdb era (→ use explicar_ingest)
 
@@ -294,7 +284,6 @@ list(
 - "calls"    — script → function (SYMBOL_FUNCTION_CALL)
 - "reads"    — script → source file / Python module import
 - "writes"   — script → output file
-- "depends"  — targets: target → upstream target
 
 ## File layout (installed package)
 
@@ -308,8 +297,6 @@ R/
   parse_python.R       — Python parser (treesitter.python or regex)
   graph.R              — Mermaid flowchart generator
   generate_viewer.R    — HTML template filler
-  targets.R            — targets cache + network integration
-  enrich.R             — Ollama LLM enrichment
   report.R             — explicar() orchestrator
   index.R              — DuckDB code-graph index
   index-docs.R         — deprecated wrappers (→ explicar_ingest / explicar_wiki_build)
