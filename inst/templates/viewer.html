@@ -83,9 +83,55 @@
       flex: 1 1 0;
       overflow: auto;
       padding: .5rem;
+      cursor: pointer;
     }
     #ex-graph-wrap .mermaid {
       min-height: 100%;
+    }
+
+    /* ── Expand button ── */
+    #ex-expand-btn {
+      position: absolute; top: .4rem; right: .4rem;
+      background: rgba(255,255,255,.9); border: 1px solid var(--border);
+      border-radius: 4px; padding: .2rem .45rem; font-size: .75rem;
+      cursor: pointer; color: var(--muted); z-index: 10;
+      line-height: 1.4;
+    }
+    #ex-expand-btn:hover { background: #fff; color: #333; }
+
+    /* ── Full-screen modal ── */
+    #ex-modal {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.55); z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    #ex-modal.open { display: flex; }
+    #ex-modal-box {
+      width: 92vw; height: 88vh;
+      background: #fff; border-radius: 8px;
+      display: flex; flex-direction: column;
+      overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,.35);
+    }
+    #ex-modal-toolbar {
+      display: flex; align-items: center; gap: .4rem;
+      padding: .4rem .6rem; border-bottom: 1px solid var(--border);
+      flex: 0 0 auto; background: #fafafa;
+    }
+    #ex-modal-toolbar button {
+      background: #fff; border: 1px solid var(--border);
+      border-radius: 4px; padding: .2rem .55rem;
+      font-size: .8rem; cursor: pointer; line-height: 1.5;
+    }
+    #ex-modal-toolbar button:hover { background: #f0f0f0; }
+    #ex-modal-toolbar .sep { flex: 1; }
+    #ex-modal-viewport {
+      flex: 1 1 0; overflow: hidden; position: relative;
+      cursor: grab; user-select: none;
+    }
+    #ex-modal-viewport.dragging { cursor: grabbing; }
+    #ex-svg-stage {
+      position: absolute; top: 0; left: 0;
+      transform-origin: 0 0;
     }
 
     /* ── Detail panel ── */
@@ -235,7 +281,7 @@
 
 <main class="ex-main">
 
-  <section class="ex-graph-panel">
+  <section class="ex-graph-panel" style="position:relative">
     <div class="ex-panel-title">
       Pipeline Graph
       <span style="font-weight:400;color:var(--muted);margin-left:.5rem">
@@ -256,12 +302,30 @@
         <span class="ex-legend-dot" style="background:#9B59B6"></span>Source file
       </span>
     </div>
+    <button id="ex-expand-btn" title="Expand graph">&#x26F6; Expand</button>
     <div id="ex-graph-wrap">
       <div class="mermaid" id="ex-graph">
 {{MERMAID_GRAPH}}
       </div>
     </div>
   </section>
+
+  <!-- Full-screen graph modal -->
+  <div id="ex-modal">
+    <div id="ex-modal-box">
+      <div id="ex-modal-toolbar">
+        <button id="ex-zoom-out" title="Zoom out">&#x2212;</button>
+        <button id="ex-zoom-fit" title="Fit to screen">&#x25A3; Fit</button>
+        <button id="ex-zoom-in"  title="Zoom in">&#x2B;</button>
+        <span style="font-size:.75rem;color:var(--muted);margin-left:.25rem" id="ex-zoom-label">100%</span>
+        <span class="sep"></span>
+        <button id="ex-modal-close">&#x2715; Close</button>
+      </div>
+      <div id="ex-modal-viewport">
+        <div id="ex-svg-stage"></div>
+      </div>
+    </div>
+  </div>
 
   <section class="ex-detail-panel">
     <div style="display:flex;border-bottom:1px solid var(--border);background:#fff;flex:0 0 auto">
@@ -441,6 +505,106 @@
       padding: 20
     }
   });
+
+  // ── Full-screen pan/zoom modal ─────────────────────────────────────────────
+  (function () {
+    var modal    = document.getElementById("ex-modal");
+    var stage    = document.getElementById("ex-svg-stage");
+    var viewport = document.getElementById("ex-modal-viewport");
+    var label    = document.getElementById("ex-zoom-label");
+
+    var tx = 0, ty = 0, scale = 1;
+
+    function applyTransform() {
+      stage.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + scale + ")";
+      label.textContent = Math.round(scale * 100) + "%";
+    }
+
+    function fitToViewport() {
+      var svg = stage.querySelector("svg");
+      if (!svg) return;
+      var vw = viewport.clientWidth, vh = viewport.clientHeight;
+      var sw = svg.getBBox ? svg.getBBox().width  : svg.clientWidth;
+      var sh = svg.getBBox ? svg.getBBox().height : svg.clientHeight;
+      if (!sw || !sh) { sw = svg.scrollWidth; sh = svg.scrollHeight; }
+      scale = Math.min(vw / sw, vh / sh) * 0.92;
+      tx = (vw - sw * scale) / 2;
+      ty = (vh - sh * scale) / 2;
+      applyTransform();
+    }
+
+    function openModal() {
+      // Clone the rendered SVG into the stage
+      var src = document.querySelector("#ex-graph svg");
+      if (!src) return;
+      stage.innerHTML = "";
+      stage.appendChild(src.cloneNode(true));
+      // Re-attach click handlers on cloned nodes
+      stage.querySelectorAll("[id]").forEach(function (el) {
+        var oid = el.getAttribute("data-mermaid-id") || el.id;
+        if (oid) el.addEventListener("click", function () {
+          window.explicarNodeClick(oid);
+          closeModal();
+        });
+      });
+      modal.classList.add("open");
+      setTimeout(fitToViewport, 60);
+    }
+
+    function closeModal() { modal.classList.remove("open"); }
+
+    document.getElementById("ex-expand-btn").addEventListener("click", openModal);
+    document.getElementById("ex-graph-wrap").addEventListener("dblclick", openModal);
+    document.getElementById("ex-modal-close").addEventListener("click", closeModal);
+    modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
+
+    document.getElementById("ex-zoom-in") .addEventListener("click", function () { zoom(1.25, viewport.clientWidth/2, viewport.clientHeight/2); });
+    document.getElementById("ex-zoom-out").addEventListener("click", function () { zoom(0.8,  viewport.clientWidth/2, viewport.clientHeight/2); });
+    document.getElementById("ex-zoom-fit").addEventListener("click", fitToViewport);
+
+    // Scroll to zoom (cursor-centred)
+    viewport.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var factor = e.deltaY < 0 ? 1.12 : 0.89;
+      var rect = viewport.getBoundingClientRect();
+      zoom(factor, e.clientX - rect.left, e.clientY - rect.top);
+    }, { passive: false });
+
+    function zoom(factor, mx, my) {
+      tx = mx - (mx - tx) * factor;
+      ty = my - (my - ty) * factor;
+      scale *= factor;
+      applyTransform();
+    }
+
+    // Pan
+    var dragging = false, startX, startY, startTx, startTy;
+    viewport.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      dragging = true; startX = e.clientX; startY = e.clientY;
+      startTx = tx; startTy = ty;
+      viewport.classList.add("dragging");
+    });
+    window.addEventListener("mousemove", function (e) {
+      if (!dragging) return;
+      tx = startTx + (e.clientX - startX);
+      ty = startTy + (e.clientY - startY);
+      applyTransform();
+    });
+    window.addEventListener("mouseup", function () {
+      dragging = false;
+      viewport.classList.remove("dragging");
+    });
+
+    // Keyboard: Esc closes, +/- zoom
+    window.addEventListener("keydown", function (e) {
+      if (!modal.classList.contains("open")) return;
+      if (e.key === "Escape") closeModal();
+      if (e.key === "+" || e.key === "=") zoom(1.15, viewport.clientWidth/2, viewport.clientHeight/2);
+      if (e.key === "-") zoom(0.87, viewport.clientWidth/2, viewport.clientHeight/2);
+      if (e.key === "0") fitToViewport();
+    });
+  })();
 })();
 </script>
 
