@@ -1,10 +1,13 @@
 # explicaR — LLM-readable API reference
 # https://github.com/CathalByrneGit/explicaR
 #
-# explicaR makes R (and Python) data pipelines interpretable and visual.
-# It parses multi-script projects, builds a Mermaid dependency DAG, generates
-# before/after data tables for dplyr/tidyr verbs, and writes a self-contained
-# HTML viewer. All processing is local; no code leaves the machine.
+# explicaR is an R DeepWiki: point at any R or Python project (or a GitHub URL)
+# and get a browsable, searchable, LLM-annotated wiki — one page per source file,
+# an interactive Mermaid dependency graph, a DuckDB-backed code index, a ragnar
+# RAG store with unified BM25+VSS semantic search (v0.5), and a stdio MCP server
+# for Claude Desktop / Claude Code.
+# Three output tiers: static file:// HTML (Tier 1), WASM SQL browser (Tier 2),
+# live httpuv server with chat (Tier 3). All processing is local.
 
 ## Quick start
 
@@ -130,6 +133,25 @@ explicar_ingest(
 Ingests wiki pages + docs into the ragnar RAG store (same DuckDB file).
 Builds BM25 + optional VSS index. Requires ragnar package.
 
+### serve_explicar_mcp
+```
+serve_explicar_mcp(
+  project_dir = ".",
+  db_path     = NULL
+) -> invisible()  [blocks on stdin]
+```
+stdio MCP server (JSON-RPC 2.0, MCP 2024-11-05).
+Tools: search_code, query_graph (SELECT SQL), get_wiki, list_files.
+Add to claude_desktop_config.json under mcpServers.
+
+### resolve_project
+```
+resolve_project(project_dir) -> character(1)
+```
+Normalises a local path or remote URL to a local directory.
+Remote repos cloned to ~/.explicar/repos/<host>/<owner>/<repo>/.
+Subsequent calls run git pull. Uses git2r (preferred) or system git.
+
 ### explicar_llms_txt
 ```
 explicar_llms_txt(
@@ -141,6 +163,39 @@ explicar_llms_txt(
 ```
 Generates a machine-readable llms.txt for the analyzed project:
 stats, file list, function index, key objects, wiki summaries, Mermaid graph.
+
+### explicar_embed
+```
+explicar_embed(
+  project_dir = ".",
+  db_path     = NULL,
+  model       = "nomic-embed-text",
+  ollama_url  = "http://localhost:11434",
+  include     = c("nodes", "wiki"),  # "nodes","wiki","source","readme","vignettes"
+  batch_size  = 20L,
+  force       = FALSE,
+  quiet       = FALSE
+) -> invisible(n_chunks)
+```
+v0.5 unified embedding entry point. Converts code-graph nodes to text descriptions
+and inserts them into the ragnar VSS store at `.explicar/explicar.duckdb`.
+Non-node include items delegate to `explicar_ingest(embed=TRUE)`.
+Requires Ollama running with the specified embedding model.
+After calling, `explicar_semantic_retrieve()` and the MCP `search_code` tool
+use vector-similarity search automatically.
+
+### explicar_semantic_retrieve
+```
+explicar_semantic_retrieve(
+  query,
+  project_dir = ".",
+  top_k       = 10L,
+  bm25_only   = FALSE
+) -> tibble(origin, hash, text, source, url, page_title)
+```
+Hybrid BM25 + VSS search over the unified ragnar store. Falls back to BM25 when
+no embeddings are present. Requires `ragnar` and the store built by
+`explicar_embed()` / `explicar_ingest()`.
 
 ### view_explicar_db
 ```
@@ -362,6 +417,7 @@ R/
   index.R              — DuckDB code-graph index
   index-docs.R         — local doc extraction + wiki generation
   index-ragnar.R       — ragnar BM25+VSS doc store
+  embed.R              — v0.5 unified embeddings + semantic retrieval
 inst/
   templates/viewer.html — self-contained HTML template
   llms.txt              — this file

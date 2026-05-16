@@ -1,252 +1,260 @@
 # explicaR
 
-> *explicar* (Spanish) — to explain
-
-**explicaR** is an R package that makes data pipelines interpretable and visual. Point it at any R project directory and it produces a single, self-contained HTML viewer showing how your scripts, variables, and functions relate — and what each `dplyr`/`tidyr` transformation actually does to your data.
-
-## What it does
-
-explicaR operates at two levels:
-
-1. **Macro** — a [Mermaid](https://mermaid.js.org) flowchart DAG showing the full dependency graph across all `.R` files
-2. **Micro** — before/after data tables showing exactly what each `dplyr`/`tidyr` verb does to your data
-
-The output is a **single, self-contained HTML file** — no Shiny server, shareable by email or hosted as a static page.
-
-```
-┌─────────────────────────┬───────────────────────────┐
-│  Pipeline Graph         │  Detail Panel             │
-│  (Mermaid DAG)          │                           │
-│                         │  variable: clean_df       │
-│  [raw.csv]              │  file: clean.R            │
-│     │ reads             │  shape: 980 × 8           │
-│  [load.R]               │                           │
-│     │ produces          │  filter @ clean.R:23      │
-│  [raw_df 1200×12]       │  ┌──────────┐  ┌───────┐ │
-│     │ uses              │  │ Before   │→ │ After │ │
-│  [clean.R]              │  │ 1200 rows│  │ 980   │ │
-│     │ produces          │  └──────────┘  └───────┘ │
-│  [clean_df 980×8]       │                           │
-│                         │  ← click any node        │
-└─────────────────────────┴───────────────────────────┘
-```
-
-## Installation
+> An R DeepWiki — point at any local R or Python project and get a browsable, searchable, LLM-annotated wiki.
 
 ```r
 remotes::install_github("CathalByrneGit/explicaR")
+explicar("path/to/any/project")   # → opens in browser
 ```
 
-Core hard dependencies (`dplyr`, `purrr`, `jsonlite`, `htmltools`, `glue`, `tibble`, `rlang`) are installed automatically. Everything else is optional — see the [dependency table](#dependencies) below.
+---
+
+## What it does
+
+Point `explicar()` at any R or Python project and get:
+
+| Output | Description |
+|---|---|
+| **Wiki** | One LLM-generated page per source file: Overview, Key functions, How it works, Usage example |
+| **Graph** | Interactive Mermaid dependency DAG across scripts, functions, and variables |
+| **Index** | DuckDB-backed code graph — queryable from Claude Desktop via MCP or in-browser via WASM |
+| **llms.txt** | Machine-readable file listing so any LLM can understand the project instantly |
+| **Chat** | RAG-powered Q&A over the wiki (Tier 3 live server) |
+
+Everything runs locally. No code leaves your machine.
+
+---
+
+## explicaR vs DeepWiki
+
+| | DeepWiki | explicaR |
+|---|---|---|
+| **Input** | GitHub / GitLab / Bitbucket URL | Local R/Python project (+ URL via git2r) |
+| **Output** | Hosted web app at `localhost:3000` | Self-contained `file://` HTML |
+| **Runtime** | Docker + Python + Node.js | R package, `install.packages()` |
+| **LLM** | API keys required upfront | Works offline with Ollama |
+| **Queryable from Claude** | No | Yes — MCP server |
+| **Installation** | `docker-compose up` | `install.packages("explicaR")` |
+
+---
 
 ## Quick start
 
 ```r
 library(explicaR)
 
-# Point at any R project — opens viewer in your browser
-explicar("path/to/your/project")
+# Tier 1 — self-contained HTML (offline, no server)
+explicar("path/to/project")
+
+# With LLM wiki pages (Ollama running locally)
+explicar("path/to/project", llm = TRUE)
+
+# Bring your own LLM (any ellmer provider — OpenAI, Anthropic, Gemini, ...)
+library(ellmer)
+explicar("path/to/project", llm_chat = chat_openai(model = "gpt-4o-mini"))
+
+# Mixed R + Python project
+explicar("path/to/project", languages = c("r", "python"))
+
+# Remote repository (cloned to ~/.explicar/repos/)
+explicar("https://github.com/tidyverse/dplyr")
 ```
 
-explicaR will:
-1. Parse all `.R` files using the best available backend (treesitter → base R)
-2. Build the Mermaid dependency DAG
-3. Generate before/after tables for every `dplyr`/`tidyr` verb call found
-4. Write `explicar_viewer.html` and open it
+---
 
-## Usage
+## Three viewer tiers
 
-### One-line report
+### Tier 1 — Static HTML (`file://`)
+
+Zero dependencies. The self-contained HTML includes the Mermaid graph, node
+detail panel, wiki pages, and verb-level before/after tables (for data
+pipeline projects). Works offline; only the Mermaid CDN request requires
+internet.
 
 ```r
-explicar(
-  project_dir = "path/to/project",
-  output_file = "pipeline.html",
-  title       = "My Data Pipeline",
-  direction   = "LR"   # graph direction: TD | LR | BT | RL
-)
+generate_viewer(pr, output_file = "wiki.html")
 ```
 
-### Step by step
+### Tier 2 — WASM SQL browser (`file://`)
+
+Embeds DuckDB-WASM so you can run SQL queries against the code graph directly
+in the browser — no server needed.
 
 ```r
-# 1. Parse the project (dispatches to best available backend)
+generate_wasm_viewer(pr, output_file = "wiki_wasm.html")
+```
+
+Queries you can run:
+```sql
+SELECT name, file, line FROM nodes WHERE type = 'function' ORDER BY name
+SELECT from_node, to_node, type FROM edges WHERE type = 'calls'
+SELECT fn_name, file, line FROM verbs ORDER BY file, line
+```
+
+### Tier 3 — Live server with chat
+
+```r
+library(ellmer)
+view_explicar_db(llm_chat = chat_ollama(model = "llama3.2"))
+# → http://127.0.0.1:8080
+```
+
+Endpoints: `GET /`, `POST /chat`, `GET /chat/stream` (SSE),
+`POST /search`, `GET /graph.json`, `GET /wiki.json`.
+The chat panel has ragnar BM25 + VSS retrieval wired automatically when the
+index exists.
+
+---
+
+## Claude Desktop / Claude Code integration (MCP)
+
+Wire explicaR directly into Claude so it can answer questions about your
+project without you copying and pasting code:
+
+```r
+# Step 1: build the index
+explicar_index_build("path/to/project")
+
+# Step 2: start the MCP server (stdio transport)
+serve_explicar_mcp("path/to/project")
+```
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "my-project": {
+      "command": "Rscript",
+      "args": ["-e", "explicaR::serve_explicar_mcp('path/to/project')"]
+    }
+  }
+}
+```
+
+Claude can then use tools: **`search_code`**, **`query_graph`** (SQL),
+**`get_wiki`**, **`list_files`**.
+
+---
+
+## Step-by-step usage
+
+```r
+library(explicaR)
+
+# 1. Parse the project
 pr <- explicar_parse("path/to/project")
-pr$nodes   # tibble: scripts, variables, functions, source files
-pr$edges   # tibble: produces, consumes, calls, reads edges
-pr$verbs   # tibble: every dplyr/tidyr verb call found
+pr$nodes   # scripts, variables, functions, source files
+pr$edges   # produces, consumes, calls, reads, writes
 
 # 2. Get the Mermaid diagram text
 cat(explicar_graph(pr))               # paste into GitHub, Quarto, Obsidian…
 cat(explicar_graph(pr, direction = "LR"))
 
-# 3. Attach real data shapes (optional — from targets cache or trace)
-snaps <- with_pipeline_trace("clean.R")
-pr    <- attach_shapes(pr, snaps$snapshots)
-
-# 4. Generate the viewer HTML
-generate_viewer(pr, output_file = "pipeline.html")
-```
-
-### Choose your parse backend
-
-```r
-# Auto (default): treesitter → base-R getParseData() fallback
-pr <- explicar_parse("path/to/project")
-
-# Force a specific backend
-pr <- explicar_parse("path/to/project", backend = "treesitter")
-pr <- explicar_parse("path/to/project", backend = "r")
-```
-
-### With a `{targets}` project
-
-If your project uses [`{targets}`](https://docs.ropensci.org/targets/), explicaR reads the pipeline graph and cache directly — no re-execution needed:
-
-```r
-# Auto-detected: explicar_mode() returns "targets"
-explicar("path/to/targets/project")
-
-# Or manually inspect the targets network
-tnet  <- targets_network("path/to/project")
-cache <- explicar_targets("path/to/project")
-pr    <- attach_shapes(pr, cache)
-```
-
-### With instrumented tracing
-
-For projects not using targets:
-
-```r
-trace <- with_pipeline_trace("clean.R")
-trace$snapshots   # named list of before/after dataframes
-trace$trace_log   # fn, input_var, output_var, elapsed_ms per call
-```
-
-### Optional LLM enrichment
-
-Enrich undocumented function nodes with plain-English labels via a local [Ollama](https://ollama.com) model:
-
-```r
-explicar("path/to/project", enrich = TRUE, llm_model = "qwen2.5-coder:3b")
-
-# Or directly on a parse result
-pr <- enrich_parse_result(pr, model = "qwen2.5-coder:3b")
-
-# Check Ollama availability
-ollama_available()   # TRUE/FALSE
-ollama_models()      # character vector of pulled models
-```
-
-## Code index
-
-Build a persistent DuckDB index of your project so repeated `explicar()` runs are fast and you can search the call graph:
-
-```r
-# Build once — only re-parses changed files on subsequent calls
-explicar_index_build()
-
-# Keyword search over nodes (functions, variables, scripts)
-explicar_index_retrieve("clean survey data")
-explicar_index_retrieve("pivot", type = "function", top_k = 5)
-
-# Direct DBI access for custom queries
-con <- explicar_index_connect()
-DBI::dbGetQuery(con, "SELECT * FROM nodes WHERE type = 'variable'")
-DBI::dbDisconnect(con, shutdown = TRUE)
-```
-
-## Documentation search with ragnar
-
-For rich hybrid BM25 + vector-similarity search over your package docs (man pages, roxygen comments, README, vignettes), use the [ragnar](https://github.com/tidyverse/ragnar)-backed doc store:
-
-```r
-# Requires: install.packages("ragnar")
-
-# Build the doc store — BM25 only (no Ollama needed)
-explicar_ragnar_build(embed = FALSE)
-
-# Build with vector embeddings for semantic search (Ollama required)
-explicar_ragnar_build(embed = TRUE, embed_model = "nomic-embed-text")
-
-# Hybrid BM25 + VSS retrieval
-explicar_doc_retrieve("how does the animation pipeline work")
-explicar_doc_retrieve("filter rows", n = 5, bm25_only = TRUE)
-
-# Wire into an ellmer chat for conversational Q&A
-# Requires: install.packages(c("ragnar", "ellmer"))
+# 3. Generate LLM wiki pages (stored in .explicar/explicar.duckdb)
 library(ellmer)
-chat <- chat_ollama(model = "llama3.2")
-chat <- explicar_register_retrieve(chat)
-chat$chat("What does explicar_parse return?")
+explicar_wiki_build("path/to/project",
+  llm_chat = chat_ollama(model = "llama3.2"))
+
+# 4. Ingest wiki + docs into the ragnar RAG store
+explicar_ingest("path/to/project")
+
+# 5. Deep multi-turn research
+chat  <- chat_ollama(model = "llama3.2")
+store <- ragnar::ragnar_store_connect(".explicar/explicar.duckdb")
+ragnar::ragnar_register_tool_retrieve(chat, store)
+deep_research(chat, "How does the parse dispatch layer work?")
+cat(chat$last_turn()$text)
+
+# 6. Generate llms.txt for this project
+explicar_llms_txt("path/to/project")   # → llms.txt
+
+# 7. Build the DuckDB code index (incremental, only re-parses changed files)
+explicar_index_build("path/to/project")
+
+# 8. Search the index
+explicar_index_retrieve("authentication functions", top_k = 5)
+explicar_doc_retrieve("how does chunking work")
 ```
 
-Source priority (deduplication applied):
-1. `man/*.Rd` — most authoritative; run `devtools::document()` to generate
-2. `R/*.R` roxygen `#'` blocks — covers undocumented internals too
-3. `README.md` / `README.Rmd`
-4. `vignettes/*.Rmd`, `.qmd`, `.md`
+---
 
-### Local LLM wiki generation
-
-Generate narrative wiki pages for each source file using a local Ollama model:
+## Remote repositories
 
 ```r
-explicar_index_generate_wiki(model = "llama3.2")
+# Clone from GitHub, analyse, open viewer
+explicar("https://github.com/tidyverse/dplyr")
 
-# Architecture overview only
-explicar_index_generate_wiki(model = "llama3.2", include = "architecture")
+# Private repos — set GITHUB_PAT env var
+Sys.setenv(GITHUB_PAT = "ghp_...")
+explicar("https://github.com/myorg/private-repo")
 ```
 
-### Privacy model
+Clones to `~/.explicar/repos/<host>/<owner>/<repo>/`.  On subsequent calls,
+pulls latest changes before re-parsing.  Requires `git2r` (recommended) or
+system `git`.
 
-| Feature | Network calls |
-|---|---|
-| `explicar()` / `explicar_parse()` | None — reads local files |
-| `explicar_index_build()` | None — reads local files |
-| `explicar_index_build_docs()` | None — reads local files |
-| `explicar_ragnar_build(embed = FALSE)` | None |
-| `explicar_ragnar_build(embed = TRUE)` | Local Ollama only |
-| `explicar_index_generate_wiki()` | Local Ollama only |
-| `enrich = TRUE` / `enrich_parse_result()` | Local Ollama only |
-
-No source code or documentation ever leaves your machine.
+---
 
 ## Architecture
 
 ```
 explicaR
-├── Parse Layer       parse.R              dispatch → best available backend
-│                     parse_treesitter.R   treesitter + treesitter.r (Tier 2)
-│                     parse_r_fallback.R   base-R getParseData()     (Tier 3)
-│                     parse_sitting_duck.R DuckDB sitting_duck ext.  (Tier 1, stub)
-├── Graph Layer       graph.R              Mermaid flowchart text generator
-├── Viewer Layer      generate_viewer.R    fills inst/templates/viewer.html
-│                     inst/templates/      self-contained HTML template
-├── Shape Layer       shapes.R             nrow × ncol badges on variable nodes
-├── Animation Layer   animate.R            before/after table widgets
-│                     verbs.R              per-verb descriptors (filter, pivot, …)
-├── Trace Layer       trace.R              instrumented source() → snapshots
-├── targets Layer     targets.R            cache reader + tar_network() topology
-├── Enrich Layer      enrich.R             Ollama LLM node-label enrichment
-├── Index Layer       index.R              DuckDB code graph (nodes/edges/verbs)
-│                     index-docs.R         local doc extraction + wiki generation
-│                     index-ragnar.R       ragnar BM25+VSS doc store
-└── Report Layer      report.R             explicar() orchestrator
+├── Parse Layer      parse.R            dispatch: treesitter → getParseData() → regex
+│                    parse_python.R     Python: treesitter.python → regex
+├── Graph Layer      graph.R            Mermaid flowchart string
+├── Wiki Layer       wiki.R             LLM wiki via ellmer + change detection
+│                    ingest.R           ragnar ingest (wiki + docs + README)
+├── RAG Layer        index-ragnar.R     ragnar BM25 + VSS store
+│                    index.R            DuckDB code-graph index (nodes/edges/verbs)
+│                    index-docs.R       Rd + roxygen + README extraction
+├── Viewer Layer     generate_viewer.R  Tier 1 HTML
+│                    generate_wasm.R    Tier 2 WASM HTML
+│                    view_explicar_db.R Tier 3 httpuv server + SSE streaming
+│                    inst/templates/    viewer.html · wasm.html · analytics.html
+├── MCP Layer        serve_mcp.R        stdio MCP server → Claude Desktop / Code
+├── Report Layer     report.R           explicar() orchestrator
+├── Remote Layer     resolve_project.R  URL → git clone/pull → local path
+├── Enrich Layer     enrich.R           Ollama LLM node-label enrichment (httr2)
+├── Trace Layer      trace.R            with_pipeline_trace() — data pipeline mode
+├── targets Layer    targets.R          tar_network() + cache reader
+└── Utilities        shapes.R · verbs.R · animate.R · llms_txt.R
 ```
 
-### Node types in the Mermaid graph
+### Node types
 
-| Mermaid shape | Colour | Meaning |
-|---|---|---|
-| Rectangle `[…]` | Blue | Script (`.R` file) |
-| Rounded `(…)` | Green | Variable / dataframe |
-| Hexagon `{{…}}` | Orange | Function |
-| Cylinder `[(…)]` | Purple | Source file (CSV, xlsx, …) |
+| Mermaid shape | Colour | Type | Meaning |
+|---|---|---|---|
+| Rectangle `[…]` | Blue | `script` | `.R` or `.py` source file |
+| Rounded `(…)` | Green | `variable` | Named object (LHS of assignment) |
+| Hexagon `{{…}}` | Orange | `function` | Named function definition |
+| Cylinder `[(…)]` | Purple | `source` | Data file (CSV, xlsx) or Python import |
 
-### Supported verbs
+### Edge types
 
-Any function exported from `dplyr` or `tidyr` whose first parameter is `.data`, `x`, `data`, or `.tbl` is auto-detected — no hardcoded list. The description for each verb is read directly from the package's own Rd documentation.
+`produces` · `consumes` · `calls` · `reads` · `writes` · `depends`
+
+---
+
+## Data pipeline mode
+
+For projects built around `dplyr` / `tidyr`, explicaR optionally captures
+before/after snapshots of each verb call:
+
+```r
+# Instrument a script and capture snapshots
+trace <- with_pipeline_trace("clean.R")
+pr    <- attach_shapes(pr, trace$snapshots)
+generate_viewer(pr)   # → detail panel shows before/after tables per verb
+
+# Or use a {targets} cache (no re-execution)
+explicar("path/to/targets/project")   # auto-detected
+```
+
+This is secondary to the wiki — the viewer shows verb tables only when
+snapshots are available.
+
+---
 
 ## Dependencies
 
@@ -254,24 +262,34 @@ Any function exported from `dplyr` or `tidyr` whose first parameter is `.data`, 
 |---|---|---|
 | `dplyr`, `purrr`, `tibble` | Data wrangling | Yes (hard) |
 | `rlang`, `glue`, `jsonlite`, `htmltools` | Utilities / rendering | Yes (hard) |
-| `treesitter` + `treesitter.r` | Tier-2 parse backend | Optional — enhances parsing |
-| `targets` | Pipeline cache + tar_network() | Optional |
+| `treesitter` + `treesitter.r` | Tier-2 parse backend (better AST) | Optional |
+| `treesitter.python` | Python AST parsing | Optional |
+| `ellmer` | LLM wiki generation, deep research | Optional |
+| `ragnar` | BM25 + VSS RAG store | Optional |
+| `httpuv` | Tier-3 live server | Optional |
+| `duckdb` + `DBI` | Code-graph index + ragnar store | Optional |
+| `httr2` | Ollama embeddings (lightweight path) | Optional |
 | `roxygen2` | Roxygen doc extraction | Optional |
-| `ragnar` | Hybrid BM25+VSS doc store | Optional |
-| `ellmer` | LLM chat integration | Optional |
-| `duckdb` + `DBI` | Code index + ragnar store | Optional |
-| `httr2` | Ollama embedding + wiki calls | Optional |
-| `git2r` | Remote repo support | Optional (future) |
+| `targets` | targets cache + `tar_network()` | Optional |
+| `yaml` | Per-project config file (`.explicar/config.yml`) | Optional |
+| `git2r` | Remote repo clone / pull | Optional |
 
-## Design principles
+---
 
-1. **Progressive disclosure** — macro graph first, click to zoom into micro detail
-2. **Zero mandatory re-execution** — uses targets cache when available; illustrative mode always works as fallback
-3. **Self-contained output** — the HTML viewer works offline (graph rendering requires internet for Mermaid CDN)
-4. **Soft dependencies** — every optional feature degrades gracefully; the package works with base R + core tidyverse only
-5. **Shape as signal** — `nrow × ncol` on every variable node tells the pipeline story without animation
-6. **Prefer human-written context** — roxygen docs and inline comments take priority over LLM inference
-7. **Private by default** — parsing, indexing, doc extraction, and wiki generation all run locally
+## Privacy
+
+| Feature | Network calls |
+|---|---|
+| `explicar()` / `explicar_parse()` | None |
+| `explicar_index_build()` | None |
+| `explicar_wiki_build(llm_chat = FALSE)` | None |
+| `explicar_wiki_build(llm_chat = chat_ollama(...))` | Local Ollama only |
+| `explicar_wiki_build(llm_chat = chat_openai(...))` | OpenAI API |
+| `explicar_ragnar_build(embed = FALSE)` | None |
+| Tier 1 viewer (browser) | Mermaid CDN only |
+| Tier 2 WASM viewer (browser) | Mermaid CDN + DuckDB-WASM CDN |
+
+---
 
 ## License
 

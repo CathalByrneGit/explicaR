@@ -1,15 +1,17 @@
 Package: explicaR
-Title: Make R Data Pipelines Interpretable and Visual
+Title: An R DeepWiki — Browse, Search and Chat with Any Codebase
 Version: 0.1.0
 Authors@R:
     person("Cathal", "Byrne", role = c("aut", "cre"),
            email = "cathal470@gmail.com")
-Description: Generates interactive visual explanations of multi-script R
-    data pipelines. At the macro level, produces a navigable dependency
-    graph (rendered via Mermaid.js) showing how scripts, functions, and
-    variables relate. At the micro level, generates before/after table
-    views of dplyr/tidyr transformations. Output is a single self-contained
-    HTML file that can be shared without a running server.
+Description: Generates a browsable, searchable, LLM-annotated wiki for any
+    R or Python project. Point explicar() at a local directory (or a GitHub
+    URL) to get: one LLM-generated wiki page per source file, an interactive
+    Mermaid dependency graph, a DuckDB-backed code index queryable from
+    Claude Desktop via the Model Context Protocol (MCP), and a self-contained
+    HTML viewer (Tier 1), a WASM SQL browser (Tier 2), or a live chat server
+    (Tier 3). All processing is local; no code leaves the machine unless an
+    external LLM provider is chosen.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -40,7 +42,8 @@ Suggests:
     DBI,
     yaml,
     httpuv,
-    ellmer
+    ellmer,
+    git2r
 Config/testthat/edition: 3
 URL: https://github.com/CathalByrneGit/explicaR
 BugReports: https://github.com/CathalByrneGit/explicaR/issues
