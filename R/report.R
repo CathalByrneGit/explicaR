@@ -103,10 +103,11 @@ explicar <- function(project_dir  = ".",
     title <- paste0("explicaR \u2014 ", basename(project_dir))
   }
 
-  # Resolve output path
+  # Resolve output path — default to project_dir/explicar/
   if (is.null(output_file)) {
-    out_base   <- output_dir %||% project_dir
-    output_file <- file.path(out_base, "explicar_viewer.html")
+    out_base    <- output_dir %||% file.path(project_dir, "explicar")
+    if (!dir.exists(out_base)) dir.create(out_base, recursive = TRUE)
+    output_file <- file.path(out_base, "viewer.html")
   }
 
   message("explicaR: parsing ", project_dir)

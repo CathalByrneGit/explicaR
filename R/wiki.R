@@ -130,6 +130,7 @@ explicar_wiki_build <- function(project_dir = ".",
     }
 
     .wiki_upsert(con, script, model_label, file_mtime, content)
+    .wiki_write_md(script, content, project_dir)
     n_gen <- n_gen + 1L
   }
 
@@ -385,5 +386,13 @@ deep_research <- function(chat, question, max_iterations = 5L) {
                stringsAsFactors = FALSE),
     append = TRUE
   )
+  invisible()
+}
+
+.wiki_write_md <- function(script, content, project_dir) {
+  wiki_dir <- file.path(project_dir, "explicar", "wiki")
+  if (!dir.exists(wiki_dir)) dir.create(wiki_dir, recursive = TRUE)
+  md_name  <- paste0(tools::file_path_sans_ext(basename(script)), ".md")
+  writeLines(content, file.path(wiki_dir, md_name))
   invisible()
 }

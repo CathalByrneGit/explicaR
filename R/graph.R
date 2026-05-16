@@ -106,7 +106,9 @@ explicar_graph <- function(parse_result,
 #' Sanitise a node name to a valid Mermaid identifier
 #' @noRd
 .mermaid_id <- function(x) {
-  gsub("[^A-Za-z0-9]", "_", x)
+  id <- gsub("[^A-Za-z0-9]", "_", x)
+  # Mermaid IDs must start with a letter; prefix with 'n' if they don't
+  ifelse(grepl("^[A-Za-z]", id), id, paste0("n", id))
 }
 
 #' Escape characters that would break Mermaid label syntax
