@@ -46,20 +46,17 @@ explicar_parse <- function(project_dir = ".",
     pattern   <- paste(matched, collapse = "|")
   }
 
-  # For R packages scan R/ only; avoids executing inst/examples, tests, etc.
-  is_pkg <- file.exists(file.path(project_dir, "DESCRIPTION")) &&
-            dir.exists(file.path(project_dir, "R"))
-  search_dirs <- if (is_pkg) {
-    c(file.path(project_dir, "R"),
-      if ("python" %in% languages && dir.exists(file.path(project_dir, "src")))
-        file.path(project_dir, "src") else character(0L))
-  } else {
-    project_dir
-  }
+  scripts <- list.files(project_dir, pattern = pattern,
+                        full.names = TRUE, recursive = recursive)
 
-  scripts <- unlist(lapply(search_dirs, list.files,
-                           pattern = pattern, full.names = TRUE,
-                           recursive = recursive), use.names = FALSE)
+  # Drop paths inside directories that are never source code
+  skip_re <- paste0(
+    "(/|\\\\)(",
+    "\\.git|\\.explicar|\\.Rproj\\.user|renv|packrat|_targets|",
+    "node_modules|\\.cache|\\.quarto",
+    ")(/|\\\\|$)"
+  )
+  scripts <- scripts[!grepl(skip_re, scripts)]
 
   if (length(scripts) == 0L) {
     message("No scripts found in: ", project_dir)
@@ -89,8 +86,11 @@ explicar_parse <- function(project_dir = ".",
 
   result <- .merge_parse_results(r_result, py_result)
 
-  # Roxygen enrichment (R files only)
-  roxy_labels <- purrr::map_dfr(r_scripts, .extract_roxygen)
+  # Roxygen enrichment — only on package source files (inside R/).
+  # roxygen2::parse_file() sources the file to inspect objects, so we must
+  # never pass example scripts, tests, or other executable non-source files.
+  roxy_candidates <- r_scripts[grepl("[/\\\\]R[/\\\\][^/\\\\]+\\.R$", r_scripts)]
+  roxy_labels <- purrr::map_dfr(roxy_candidates, .extract_roxygen)
   result$nodes <- .merge_roxygen(result$nodes, roxy_labels)
 
   # Raw data source file references (R files only — Python imports handled above)
