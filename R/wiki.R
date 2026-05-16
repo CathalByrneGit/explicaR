@@ -196,11 +196,17 @@ deep_research <- function(chat, question, max_iterations = 5L) {
   nodes <- parse_result$nodes
   edges <- parse_result$edges
 
-  file_nodes <- nodes[!is.na(nodes$file) &
-                        (nodes$file == script | nodes$file == script_name), ]
-  fns  <- file_nodes$name[file_nodes$type == "function"]
-  vars <- file_nodes$name[file_nodes$type == "variable"]
+  # Functions DEFINED here = produced by this script via assignment
+  fns  <- edges[edges$from == script_name & edges$type == "produces", "to", drop = TRUE]
+  fn_nodes <- nodes[nodes$name %in% fns & nodes$type == "function", ]
+  fns  <- fn_nodes$name
 
+  # Variables produced by this script
+  vars <- edges[edges$from == script_name & edges$type == "produces", "to", drop = TRUE]
+  var_nodes <- nodes[nodes$name %in% vars & nodes$type == "variable", ]
+  vars <- var_nodes$name
+
+  # External functions called (not defined here)
   calls_out <- edges[edges$from == script_name & edges$type == "calls", "to",
                      drop = TRUE]
   calls_out <- setdiff(calls_out, fns)

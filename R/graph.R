@@ -35,19 +35,24 @@ explicar_graph <- function(parse_result,
   # File-level view: collapse to script nodes with synthesised data-flow edges
   if (level == "files") {
     nodes <- dplyr::filter(nodes, .data$type == "script")
-    # Derive script→script edges via shared variables
-    producers <- edges[edges$type == "produces",  c("from", "to"), drop = FALSE]
-    consumers <- edges[edges$type == "consumes",  c("from", "to"), drop = FALSE]
-    shared    <- merge(producers, consumers, by.x = "to", by.y = "from")
+    # Derive script→script edges: script A produces var V, script B consumes V
+    prod_raw  <- edges[edges$type == "produces", , drop = FALSE]
+    cons_raw  <- edges[edges$type == "consumes", , drop = FALSE]
+    producers <- data.frame(script_from = prod_raw$from, var = prod_raw$to,
+                            stringsAsFactors = FALSE)
+    consumers <- data.frame(var = cons_raw$from, script_to = cons_raw$to,
+                            stringsAsFactors = FALSE)
+    shared <- dplyr::inner_join(producers, consumers, by = "var")
     if (nrow(shared) > 0L) {
       s2s <- unique(data.frame(
-        from = shared$from.x, to = shared$to.y,
+        from = shared$script_from, to = shared$script_to,
         type = "feeds", stringsAsFactors = FALSE
       ))
-      s2s <- s2s[s2s$from != s2s$to & s2s$from %in% nodes$name & s2s$to %in% nodes$name, ]
+      s2s <- s2s[s2s$from != s2s$to &
+                   s2s$from %in% nodes$name & s2s$to %in% nodes$name, ]
     } else {
-      s2s <- data.frame(from=character(), to=character(), type=character(),
-                        stringsAsFactors=FALSE)
+      s2s <- data.frame(from = character(), to = character(), type = character(),
+                        stringsAsFactors = FALSE)
     }
     edges <- s2s
   }
