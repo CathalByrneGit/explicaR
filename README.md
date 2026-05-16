@@ -48,10 +48,10 @@ library(explicaR)
 # Tier 1 — self-contained HTML (offline, no server)
 explicar("path/to/project")
 
-# With LLM wiki pages (Ollama running locally)
+# With LLM wiki pages (local Ollama — free, private)
 explicar("path/to/project", llm = TRUE)
 
-# Bring your own LLM (any ellmer provider — OpenAI, Anthropic, Gemini, ...)
+# Bring your own LLM (any ellmer provider — see table below)
 library(ellmer)
 explicar("path/to/project", llm_chat = chat_openai(model = "gpt-4o-mini"))
 
@@ -60,6 +60,41 @@ explicar("path/to/project", languages = c("r", "python"))
 
 # Remote repository (cloned to ~/.explicar/repos/)
 explicar("https://github.com/tidyverse/dplyr")
+```
+
+---
+
+## LLM provider support
+
+Wiki generation, chat, and DeepResearch all use [ellmer](https://ellmer.tidyverse.org),
+which supports every major provider with a consistent API.  Pass any `Chat`
+object as `llm_chat`:
+
+| Provider | Call | Notes |
+|---|---|---|
+| **Ollama** (local) | `chat_ollama("llama3.2")` | Free, private, no key needed |
+| **OpenAI** | `chat_openai(model = "gpt-4o-mini")` | Reads `OPENAI_API_KEY` |
+| **Anthropic** | `chat_anthropic(model = "claude-sonnet-4-5")` | Reads `ANTHROPIC_API_KEY` |
+| **Google Gemini** | `chat_google_gemini()` | Reads `GOOGLE_API_KEY` |
+| **Groq** | `chat_groq()` | Reads `GROQ_API_KEY` |
+| **AWS Bedrock** | `chat_aws_bedrock()` | Uses AWS credentials |
+| **llama.cpp / vLLM** | `chat_openai_compatible(base_url = "http://...")` | Any OpenAI-compatible endpoint |
+
+```r
+library(ellmer)
+library(explicaR)
+
+# Ollama — completely local, no cost
+explicar_wiki_build("path/to/project",
+  llm_chat = chat_ollama(model = "llama3.2"))
+
+# OpenAI
+explicar_wiki_build("path/to/project",
+  llm_chat = chat_openai(model = "gpt-4o-mini"))
+
+# Anthropic
+explicar_wiki_build("path/to/project",
+  llm_chat = chat_anthropic(model = "claude-haiku-4-5"))
 ```
 
 ---
@@ -161,8 +196,9 @@ explicar_wiki_build("path/to/project",
 # 4. Ingest wiki + docs into the ragnar RAG store
 explicar_ingest("path/to/project")
 
-# 5. Deep multi-turn research
-chat  <- chat_ollama(model = "llama3.2")
+# 5. DeepResearch — multi-turn iterative investigation
+#    Plans → iterates (up to 5 rounds with ragnar retrieval) → CONCLUSION:
+chat  <- chat_ollama(model = "llama3.2")   # or any ellmer provider
 store <- ragnar::ragnar_store_connect(".explicar/explicar.duckdb")
 ragnar::ragnar_register_tool_retrieve(chat, store)
 deep_research(chat, "How does the parse dispatch layer work?")
@@ -200,6 +236,22 @@ system `git`.
 
 ## Architecture
 
+### Unified database: `.explicar/explicar.duckdb`
+
+A single DuckDB file is **both** the ragnar RAG store and the explicaR code
+graph — all tables are co-located and can be JOINed directly:
+
+```
+.explicar/explicar.duckdb
+├── ragnar-owned  documents, chunks          ← BM25 + VSS retrieval
+└── explicaR-owned  nodes, edges, verbs      ← code graph
+                    functions, files         ← function index
+                    wiki                     ← LLM-generated pages
+                    _meta                    ← schema version / flags
+```
+
+### Layer map
+
 ```
 explicaR
 ├── Parse Layer      parse.R            dispatch: treesitter → getParseData() → regex
@@ -207,6 +259,7 @@ explicaR
 ├── Graph Layer      graph.R            Mermaid flowchart string
 ├── Wiki Layer       wiki.R             LLM wiki via ellmer + change detection
 │                    ingest.R           ragnar ingest (wiki + docs + README)
+│                    embed.R            VSS: embed code-graph nodes via ragnar
 ├── RAG Layer        index-ragnar.R     ragnar BM25 + VSS store
 │                    index.R            DuckDB code-graph index (nodes/edges/verbs)
 │                    index-docs.R       Rd + roxygen + README extraction
@@ -217,7 +270,7 @@ explicaR
 ├── MCP Layer        serve_mcp.R        stdio MCP server → Claude Desktop / Code
 ├── Report Layer     report.R           explicar() orchestrator
 ├── Remote Layer     resolve_project.R  URL → git clone/pull → local path
-├── Enrich Layer     enrich.R           Ollama LLM node-label enrichment (httr2)
+├── Enrich Layer     enrich.R           Ollama LLM node-label enrichment
 ├── Trace Layer      trace.R            with_pipeline_trace() — data pipeline mode
 ├── targets Layer    targets.R          tar_network() + cache reader
 └── Utilities        shapes.R · verbs.R · animate.R · llms_txt.R

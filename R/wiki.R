@@ -38,13 +38,23 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Auto-detect Ollama
-#' explicar_wiki_build("path/to/project")
-#'
-#' # Bring your own ellmer chat (any provider)
 #' library(ellmer)
-#' chat <- chat_openai(model = "gpt-4o-mini")
-#' explicar_wiki_build("path/to/project", llm_chat = chat)
+#'
+#' # Ollama — local, free, no key
+#' explicar_wiki_build("path/to/project",
+#'   llm_chat = chat_ollama(model = "llama3.2"))
+#'
+#' # OpenAI (reads OPENAI_API_KEY)
+#' explicar_wiki_build("path/to/project",
+#'   llm_chat = chat_openai(model = "gpt-4o-mini"))
+#'
+#' # Anthropic (reads ANTHROPIC_API_KEY)
+#' explicar_wiki_build("path/to/project",
+#'   llm_chat = chat_anthropic(model = "claude-haiku-4-5"))
+#'
+#' # Google Gemini, Groq, AWS Bedrock, llama.cpp — same pattern:
+#' # chat_google_gemini() / chat_groq() / chat_aws_bedrock() /
+#' # chat_openai_compatible(base_url = "http://localhost:8080")
 #'
 #' # Roxygen fallback only (no LLM)
 #' explicar_wiki_build("path/to/project", llm_chat = FALSE)
