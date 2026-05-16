@@ -1,5 +1,7 @@
 # explicaR
 
+> *explicar* (Spanish) — to explain
+
 > An R DeepWiki — point at any local R or Python project and get a browsable, searchable, LLM-annotated wiki.
 
 ```r
